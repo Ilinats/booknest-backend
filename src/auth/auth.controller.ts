@@ -31,7 +31,6 @@ export class AuthController {
 
   @Post('logout-all')
   async logoutAll(@Body('userId') userId: string) {
-    // В реално приложение userId се извлича от JWT; тук е опростено
     return this.authService.logoutAll(userId);
   }
 

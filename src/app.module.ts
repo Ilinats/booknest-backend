@@ -5,9 +5,12 @@ import { AppConfigModule } from './config/app-config.module';
 import { UsersModule } from './users/users.module';
 import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
+import { GenresModule } from './genres/genres.module';
+import { UserGenrePreferencesModule } from './genres/user-genre-preferences.module';
+import { BooksModule } from './books/books.module';
 
 @Module({
-  imports: [AppConfigModule, MailModule, AuthModule, UsersModule],
+  imports: [AppConfigModule, MailModule, AuthModule, UsersModule, GenresModule, UserGenrePreferencesModule, BooksModule],
   controllers: [AppController],
   providers: [AppService],
 })

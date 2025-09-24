@@ -97,7 +97,7 @@ export class AuthService {
       console.warn('Failed to send verification email:', error.message);
     }
 
-    const { accessToken, refreshToken } = await this.issueTokensStateful(savedUser.id, savedUser.username, savedUser.email, undefined, undefined);
+    const { accessToken, refreshToken } = await this.issueTokensStateful(savedUser.id, savedUser.username, savedUser.email, savedUser.userType, undefined, undefined);
     return { user: savedUser, accessToken, refreshToken };
   }
 
@@ -105,7 +105,7 @@ export class AuthService {
     const user = await this.verifyPassword(dto.identifier, dto.password);
     if (!user) throw new UnauthorizedException({ message: 'Invalid credentials', code: 'INVALID_CREDENTIALS' });
     await this.updateLastLogin(user.id);
-    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username, user.email, meta?.ip, meta?.userAgent, meta?.deviceName);
+    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName);
     return { user, accessToken, refreshToken };
   }
 
@@ -142,7 +142,7 @@ export class AuthService {
     if (!user) throw new UnauthorizedException({ message: 'Invalid refresh token', code: 'INVALID_REFRESH_TOKEN' });
 
     // Ротация: създаваме нов refresh токен и маркираме текущия като заменен
-    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username, user.email, meta?.ip, meta?.userAgent, meta?.deviceName, token.familyId, token.id);
+    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName, token.familyId, token.id);
 
     return { accessToken, refreshToken };
   }
@@ -199,8 +199,8 @@ export class AuthService {
     return { message: 'If that email exists, a verification was sent.' };
   }
 
-  private async issueTokensStateful(userId: string, username: string, email: string, ip?: string, userAgent?: string, deviceName?: string, familyId?: string, replacedTokenId?: string) {
-    const payload = { sub: userId, username, email };
+  private async issueTokensStateful(userId: string, username: string, email: string, userType: 'reader' | 'author', ip?: string, userAgent?: string, deviceName?: string, familyId?: string, replacedTokenId?: string) {
+    const payload = { sub: userId, username, email, userType };
     const accessToken = await this.jwtService.signAsync(payload);
 
     const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') ?? (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') + '_refresh';
@@ -258,8 +258,8 @@ export class AuthService {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  private async issueTokens(userId: string, username: string, email: string) {
-    const payload = { sub: userId, username, email };
+  private async issueTokens(userId: string, username: string, email: string, userType: 'reader' | 'author') {
+    const payload = { sub: userId, username, email, userType };
     const accessToken = await this.jwtService.signAsync(payload);
     const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') ?? (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') + '_refresh';
     const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';

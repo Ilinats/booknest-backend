@@ -7,10 +7,9 @@ import { MailModule } from './mail/mail.module';
 import { AuthModule } from './auth/auth.module';
 import { GenresModule } from './genres/genres.module';
 import { UserGenrePreferencesModule } from './genres/user-genre-preferences.module';
-import { BooksModule } from './books/books.module';
 
 @Module({
-  imports: [AppConfigModule, MailModule, AuthModule, UsersModule, GenresModule, UserGenrePreferencesModule, BooksModule],
+  imports: [AppConfigModule, MailModule, AuthModule, UsersModule, GenresModule, UserGenrePreferencesModule],
   controllers: [AppController],
   providers: [AppService],
 })

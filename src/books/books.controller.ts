@@ -9,7 +9,6 @@ import { UpdateBookDto } from './dto/update-book.dto';
 export class BooksController {
   constructor(private readonly booksService: BooksService) {}
 
-  // Author-only
   @UseGuards(JwtAuthGuard)
   @Post()
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
@@ -71,7 +70,6 @@ export class BooksController {
     return this.booksService.publish(user.sub, user.userType as any, bookId);
   }
 
-  // Public browse/search
   @Get()
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   browse(
@@ -99,7 +97,6 @@ export class BooksController {
     return this.booksService.browse(parsed);
   }
 
-  // File management stubs
   @UseGuards(JwtAuthGuard)
   @Post(':bookId/upload')
   upload(@CurrentUser() user: JwtPayload, @Param('bookId', new ParseUUIDPipe()) bookId: string) {
@@ -112,7 +109,6 @@ export class BooksController {
     return { message: 'Download endpoint not implemented yet', bookId };
   }
 
-  // Author stats
   @UseGuards(JwtAuthGuard)
   @Get(':bookId/stats')
   stats(@CurrentUser('sub') authorId: string, @Param('bookId', new ParseUUIDPipe()) bookId: string) {
@@ -123,6 +119,18 @@ export class BooksController {
   @Get(':bookId/analytics')
   analytics(@CurrentUser('sub') authorId: string, @Param('bookId', new ParseUUIDPipe()) bookId: string) {
     return this.booksService.analytics(authorId, bookId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':bookId/analytics/detailed')
+  getDetailedBookAnalytics(@CurrentUser('sub') authorId: string, @Param('bookId', new ParseUUIDPipe()) bookId: string) {
+    return this.booksService.getBookAnalytics(bookId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('analytics/author')
+  getAuthorAnalytics(@CurrentUser('sub') authorId: string) {
+    return this.booksService.getAuthorAnalytics(authorId);
   }
 }
 

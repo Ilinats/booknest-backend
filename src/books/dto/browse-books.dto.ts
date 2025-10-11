@@ -24,11 +24,11 @@ export class BrowseBooksDto {
 
   @IsOptional()
   @IsString()
-  publishedFrom?: string; // ISO date
+  publishedFrom?: string;
 
   @IsOptional()
   @IsString()
-  publishedTo?: string; // ISO date
+  publishedTo?: string;
 
   @IsOptional()
   @IsInt()

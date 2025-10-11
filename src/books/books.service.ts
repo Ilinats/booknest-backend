@@ -8,6 +8,8 @@ import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { Application } from '../applications/entity/application.entity';
+import { Review } from '../applications/entity/review.entity';
 
 @Injectable()
 export class BooksService {
@@ -15,6 +17,8 @@ export class BooksService {
     @InjectRepository(Book) private readonly bookRepo: Repository<Book>,
     @InjectRepository(Series) private readonly seriesRepo: Repository<Series>,
     @InjectRepository(BookGenre) private readonly bookGenreRepo: Repository<BookGenre>,
+    @InjectRepository(Application) private readonly applicationRepo: Repository<Application>,
+    @InjectRepository(Review) private readonly reviewRepo: Repository<Review>,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -115,7 +119,6 @@ export class BooksService {
     }
     await this.bookRepo.save(merged);
     if (dto.genreIds) {
-      // replace genres
       await this.bookGenreRepo.delete({ bookId: bookId });
       if (dto.genreIds.length) {
         const bgs = dto.genreIds.map((gid) => this.bookGenreRepo.create({ bookId, genreId: gid }));
@@ -173,7 +176,6 @@ export class BooksService {
   }
 
   async featured() {
-    // Simple placeholder: latest active books
     console.log('Fetching featured books...');
     const books = await this.bookRepo.find({ 
       where: { status: 'active' }, 
@@ -222,7 +224,30 @@ export class BooksService {
       
       const books = results.map(row => {
         const book = new Book();
-        Object.assign(book, row);
+        book.id = row.id;
+        book.authorId = row.author_id;
+        book.title = row.title;
+        book.shortDescription = row.short_description;
+        book.fullDescription = row.full_description;
+        book.coverImageUrl = row.cover_image_url;
+        book.pageCount = row.page_count;
+        book.ageRating = row.age_rating;
+        book.distributionType = row.distribution_type;
+        book.fileUrl = row.file_url;
+        book.fileSize = row.file_size;
+        book.fileType = row.file_type;
+        book.totalCopies = row.total_copies;
+        book.availableCopies = row.available_copies;
+        book.applicationDeadline = row.application_deadline;
+        book.reviewDeadlineDays = row.review_deadline_days;
+        book.selectionCriteria = row.selection_criteria;
+        book.selectionMethod = row.selection_method;
+        book.status = row.status;
+        book.createdAt = row.created_at;
+        book.updatedAt = row.updated_at;
+        book.publishedAt = row.published_at;
+        book.seriesId = row.series_id;
+        book.seriesOrder = row.series_order;
         return book;
       });
       
@@ -241,7 +266,6 @@ export class BooksService {
     const book = await this.bookRepo.findOne({ where: { id: bookId } });
     if (!book) throw new NotFoundException('Book not found');
     if (book.authorId !== authorId) throw new ForbiddenException('Cannot view stats of others books');
-    // Placeholder stats
     return { bookId, totalApplicants: 0, approvedReaders: 0 };
   }
 
@@ -249,8 +273,303 @@ export class BooksService {
     const book = await this.bookRepo.findOne({ where: { id: bookId } });
     if (!book) throw new NotFoundException('Book not found');
     if (book.authorId !== authorId) throw new ForbiddenException('Cannot view analytics of others books');
-    // Placeholder analytics
-    return { bookId, views: 0, clicks: 0 };
+    
+    return this.getBookAnalytics(bookId);
+  }
+
+  async getBookAnalytics(bookId: string) {
+    const [
+      totalApplications,
+      approvedApplications,
+      pendingApplications,
+      rejectedApplications,
+      totalReviews,
+      reviews,
+      averageRating,
+      ratingDistribution,
+      reviewTypes,
+      averageWordCount,
+      recentReviews
+    ] = await Promise.all([
+      this.applicationRepo.count({ where: { bookId } }),
+      this.applicationRepo.count({ where: { bookId, status: 'approved' } }),
+      this.applicationRepo.count({ where: { bookId, status: 'pending' } }),
+      this.applicationRepo.count({ where: { bookId, status: 'rejected' } }),
+      this.reviewRepo.count({ 
+        where: { 
+          application: { bookId },
+          isPublic: true 
+        } 
+      }),
+      this.reviewRepo.find({ 
+        where: { 
+          application: { bookId },
+          isPublic: true 
+        },
+        relations: ['application', 'application.reader']
+      }),
+      this.getAverageRating(bookId),
+      this.getRatingDistribution(bookId),
+      this.getReviewTypes(bookId),
+      this.getAverageWordCount(bookId),
+      this.getRecentReviews(bookId, 5)
+    ]);
+
+    const positiveFeedback = reviews.length > 0 
+      ? Math.round((reviews.filter(r => r.rating >= 4).length / reviews.length) * 100)
+      : 0;
+
+    return {
+      bookId,
+      summary: {
+        totalApplications,
+        approvedApplications,
+        pendingApplications,
+        rejectedApplications,
+        totalReviews,
+        averageRating,
+        positiveFeedback
+      },
+      reviewAnalytics: {
+        totalReviews,
+        averageRating,
+        positiveFeedback,
+        ratingDistribution,
+        reviewTypes,
+        averageWordCount
+      },
+      applicationAnalytics: {
+        totalApplications,
+        approvedApplications,
+        pendingApplications,
+        rejectedApplications,
+        approvalRate: totalApplications > 0 ? Math.round((approvedApplications / totalApplications) * 100) : 0,
+        rejectionRate: totalApplications > 0 ? Math.round((rejectedApplications / totalApplications) * 100) : 0
+      },
+      recentReviews
+    };
+  }
+
+  private async getAverageRating(bookId: string): Promise<number> {
+    const result = await this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoin('review.application', 'application')
+      .select('AVG(review.rating)', 'average')
+      .where('application.bookId = :bookId', { bookId })
+      .andWhere('review.isPublic = :isPublic', { isPublic: true })
+      .getRawOne();
+
+    return result?.average ? parseFloat(parseFloat(result.average).toFixed(1)) : 0;
+  }
+
+  private async getRatingDistribution(bookId: string) {
+    const result = await this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoin('review.application', 'application')
+      .select('review.rating', 'rating')
+      .addSelect('COUNT(*)', 'count')
+      .where('application.bookId = :bookId', { bookId })
+      .andWhere('review.isPublic = :isPublic', { isPublic: true })
+      .groupBy('review.rating')
+      .orderBy('review.rating', 'ASC')
+      .getRawMany();
+
+
+    const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    
+    result.forEach(row => {
+      distribution[row.rating] = parseInt(row.count);
+    });
+
+    return distribution;
+  }
+
+  private async getReviewTypes(bookId: string) {
+    const result = await this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoin('review.application', 'application')
+      .select('review.reviewType', 'type')
+      .addSelect('COUNT(*)', 'count')
+      .where('application.bookId = :bookId', { bookId })
+      .andWhere('review.isPublic = :isPublic', { isPublic: true })
+      .groupBy('review.reviewType')
+      .getRawMany();
+
+    const types = { text: 0, link: 0 };
+    result.forEach(row => {
+      types[row.type] = parseInt(row.count);
+    });
+
+    return types;
+  }
+
+  private async getAverageWordCount(bookId: string): Promise<number> {
+    const result = await this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoin('review.application', 'application')
+      .select('AVG(review.wordCount)', 'average')
+      .where('application.bookId = :bookId', { bookId })
+      .andWhere('review.isPublic = :isPublic', { isPublic: true })
+      .andWhere('review.wordCount IS NOT NULL')
+      .getRawOne();
+
+    return result?.average ? Math.round(parseFloat(result.average)) : 0;
+  }
+
+  private async getRecentReviews(bookId: string, limit: number = 5) {
+    return this.reviewRepo.find({
+      where: { 
+        application: { bookId },
+        isPublic: true 
+      },
+      relations: ['application', 'application.reader'],
+      order: { createdAt: 'DESC' },
+      take: limit
+    });
+  }
+
+  async getAuthorAnalytics(authorId: string) {
+    const [
+      totalBooks,
+      publishedBooks,
+      totalApplications,
+      approvedApplications,
+      totalReviews,
+      averageRating,
+      booksWithReviews,
+      topPerformingBooks
+    ] = await Promise.all([
+      this.bookRepo.count({ where: { authorId } }),
+      this.bookRepo.count({ where: { authorId, status: 'active' } }),
+      this.applicationRepo.count({ 
+        where: { book: { authorId } } 
+      }),
+      this.applicationRepo.count({ 
+        where: { book: { authorId }, status: 'approved' } 
+      }),
+      this.reviewRepo.count({ 
+        where: { 
+          application: { book: { authorId } },
+          isPublic: true 
+        } 
+      }),
+      this.getAuthorAverageRating(authorId),
+      this.getBooksWithReviews(authorId),
+      this.getTopPerformingBooks(authorId, 5)
+    ]);
+
+    const overallApprovalRate = totalApplications > 0 
+      ? Math.round((approvedApplications / totalApplications) * 100) 
+      : 0;
+
+    return {
+      authorId,
+      overview: {
+        totalBooks,
+        publishedBooks,
+        draftBooks: totalBooks - publishedBooks,
+        totalApplications,
+        approvedApplications,
+        totalReviews,
+        averageRating,
+        overallApprovalRate
+      },
+      performance: {
+        booksWithReviews,
+        averageRating,
+        topPerformingBooks
+      },
+      trends: {
+        monthlyApplications: await this.getMonthlyApplications(authorId),
+        monthlyReviews: await this.getMonthlyReviews(authorId)
+      }
+    };
+  }
+
+  private async getAuthorAverageRating(authorId: string): Promise<number> {
+    const result = await this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoin('review.application', 'application')
+      .leftJoin('application.book', 'book')
+      .select('AVG(review.rating)', 'average')
+      .where('book.authorId = :authorId', { authorId })
+      .andWhere('review.isPublic = :isPublic', { isPublic: true })
+      .getRawOne();
+
+    return result?.average ? parseFloat(parseFloat(result.average).toFixed(1)) : 0;
+  }
+
+  private async getBooksWithReviews(authorId: string) {
+    const result = await this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoin('review.application', 'application')
+      .leftJoin('application.book', 'book')
+      .select('COUNT(DISTINCT application.bookId)', 'count')
+      .where('book.authorId = :authorId', { authorId })
+      .andWhere('review.isPublic = :isPublic', { isPublic: true })
+      .getRawOne();
+
+    return parseInt(result?.count || '0');
+  }
+
+  private async getTopPerformingBooks(authorId: string, limit: number = 5) {
+    return this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoin('review.application', 'application')
+      .leftJoin('application.book', 'book')
+      .select('book.id', 'bookId')
+      .addSelect('book.title', 'title')
+      .addSelect('AVG(review.rating)', 'averageRating')
+      .addSelect('COUNT(review.id)', 'reviewCount')
+      .where('book.authorId = :authorId', { authorId })
+      .andWhere('review.isPublic = :isPublic', { isPublic: true })
+      .groupBy('book.id, book.title')
+      .orderBy('averageRating', 'DESC')
+      .addOrderBy('reviewCount', 'DESC')
+      .limit(limit)
+      .getRawMany();
+  }
+
+  private async getMonthlyApplications(authorId: string) {
+    const result = await this.applicationRepo
+      .createQueryBuilder('application')
+      .leftJoin('application.book', 'book')
+      .select('DATE_TRUNC(\'month\', application.appliedAt)', 'month')
+      .addSelect('COUNT(*)', 'count')
+      .where('book.authorId = :authorId', { authorId })
+      .andWhere('application.appliedAt >= :sixMonthsAgo', { 
+        sixMonthsAgo: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000) 
+      })
+      .groupBy('month')
+      .orderBy('month', 'ASC')
+      .getRawMany();
+
+    return result.map(row => ({
+      month: row.month,
+      count: parseInt(row.count)
+    }));
+  }
+
+  private async getMonthlyReviews(authorId: string) {
+    const result = await this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoin('review.application', 'application')
+      .leftJoin('application.book', 'book')
+      .select('DATE_TRUNC(\'month\', review.createdAt)', 'month')
+      .addSelect('COUNT(*)', 'count')
+      .where('book.authorId = :authorId', { authorId })
+      .andWhere('review.isPublic = :isPublic', { isPublic: true })
+      .andWhere('review.createdAt >= :sixMonthsAgo', { 
+        sixMonthsAgo: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000) 
+      })
+      .groupBy('month')
+      .orderBy('month', 'ASC')
+      .getRawMany();
+
+    return result.map(row => ({
+      month: row.month,
+      count: parseInt(row.count)
+    }));
   }
 }
 

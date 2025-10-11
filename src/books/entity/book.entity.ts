@@ -82,7 +82,6 @@ export class Book {
   @Column({ name: 'published_at', type: 'timestamp', nullable: true })
   publishedAt?: Date | null;
 
-  // Series relations
   @ManyToOne(() => Series, (series) => series.books, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'series_id' })
   series?: Series | null;
@@ -93,7 +92,6 @@ export class Book {
   @Column({ name: 'series_order', type: 'int', nullable: true })
   seriesOrder?: number | null;
 
-  // Join table
   @OneToMany(() => BookGenre, (bg) => bg.book)
   bookGenres?: BookGenre[];
 }

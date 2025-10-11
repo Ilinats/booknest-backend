@@ -10,12 +10,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RefreshToken } from './entity/refresh-token.entity';
 import { UserAddress } from '../users/entity/user-address.entity';
 import { UserAddressService } from '../users/user-address.service';
+import { Book } from '../books/entity/book.entity';
+import { Application } from '../applications/entity/application.entity';
+import { Review } from '../applications/entity/review.entity';
 
 @Module({
   imports: [
     ConfigModule,
     MailModule,
-    TypeOrmModule.forFeature([User, RefreshToken, UserAddress]),
+    TypeOrmModule.forFeature([User, RefreshToken, UserAddress, Book, Application, Review]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

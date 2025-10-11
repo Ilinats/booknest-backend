@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import nodemailer from 'nodemailer';
+import * as nodemailer from 'nodemailer';
 
 interface SmtpConfig {
   host: string;
@@ -53,7 +53,8 @@ export class MailService {
         html: `<p>Welcome to <strong>BookNest</strong>!</p><p>Please verify your email:</p><p>${htmlButton}</p>${altLink}<p>If the button does not work, copy and paste this link: <br/><code>${primaryUrl}</code></p>`,
       });
     } catch (err) {
-      throw new InternalServerErrorException('Failed to send email');
+      console.error('Email sending error details:', err);
+      throw new InternalServerErrorException(`Failed to send email: ${err.message}`);
     }
   }
 } 

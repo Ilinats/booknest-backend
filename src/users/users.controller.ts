@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '../auth/current-user.decorator';
 
@@ -30,6 +31,32 @@ export class UsersController {
       bio: dto.bio,
     };
     return this.usersService.update(userId, allowed);
+  }
+
+  @Get('profile/:id')
+  async getProfile(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.usersService.getProfile(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('profile/me')
+  async updateProfile(@CurrentUser('sub') userId: string, @Body() dto: UpdateProfileDto) {
+    return this.usersService.updateProfile(userId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profile/:id/stats')
+  async getAuthorStats(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', new ParseUUIDPipe()) authorId: string
+  ) {
+    return this.usersService.getAuthorStats(authorId, user.sub, user.userType);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/stats')
+  async getMyStats(@CurrentUser('sub') userId: string) {
+    return this.usersService.getMyStats(userId);
   }
 
   @Get()

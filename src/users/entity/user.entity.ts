@@ -9,15 +9,19 @@ export class User {
   id!: string;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 50, nullable: false })
-  username!: string;
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  username?: string | null;
 
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 255, nullable: false })
   email!: string;
 
-  @Column({ name: 'password_hash', type: 'varchar', length: 255, nullable: false, select: false })
-  passwordHash!: string;
+  @Column({ name: 'password_hash', type: 'varchar', length: 255, nullable: true, select: false })
+  passwordHash?: string | null;
+
+  @Index({ unique: true })
+  @Column({ name: 'google_id', type: 'varchar', length: 255, nullable: true })
+  googleId?: string | null;
 
   @Column({ name: 'first_name', type: 'varchar', length: 100, nullable: false })
   firstName!: string;
@@ -55,7 +59,6 @@ export class User {
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt!: Date;
 
-  // Използваме auto-update за UTC време. DB тригер при prod е за предпочитане.
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp with time zone' })
   updatedAt!: Date;
 

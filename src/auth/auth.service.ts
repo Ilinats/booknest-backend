@@ -50,14 +50,25 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
-    // Check if user already exists by email or username
+    console.log('Registration attempt for:', { email: dto.email, username: dto.username });
+    
     const existingUser = await this.usersRepository.findOne({ 
       where: [
         { email: dto.email.toLowerCase() },
         { username: dto.username }
       ]
     });
-    if (existingUser) throw new ConflictException({ message: 'User already exists', code: 'USER_EXISTS' });
+    
+    if (existingUser) {
+      console.log('User already exists:', { 
+        id: existingUser.id, 
+        email: existingUser.email, 
+        username: existingUser.username,
+        existingEmail: existingUser.email === dto.email.toLowerCase(),
+        existingUsername: existingUser.username === dto.username
+      });
+      throw new ConflictException({ message: 'User already exists', code: 'USER_EXISTS' });
+    }
 
     const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
     
@@ -74,30 +85,50 @@ export class AuthService {
       isActive: true,
     });
 
-    const savedUser = await this.usersRepository.save(user);
+    let savedUser: User;
+    try {
+      savedUser = await this.usersRepository.save(user);
+      console.log('User saved successfully:', { id: savedUser.id, email: savedUser.email, username: savedUser.username });
+    } catch (error) {
+      console.error('Failed to save user:', error);
+      console.error('User data that failed to save:', { 
+        email: user.email, 
+        username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName
+      });
+      throw error;
+    }
 
     if (dto.address) {
       await this.userAddressService.create(savedUser.id, dto.address);
     }
 
-    // Генерираме verification token и изпращаме имейл
     const verifyToken = crypto.randomBytes(32).toString('hex');
     await this.setEmailVerificationToken(savedUser.id, verifyToken);
 
     const webBaseUrl = this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
     const verifyUrl = `${webBaseUrl}/verify-email?token=${encodeURIComponent(verifyToken)}`;
 
-    const appScheme = this.configService.get<string>('APP_DEEP_LINK_SCHEME');
-    const appHost = this.configService.get<string>('APP_DEEP_LINK_HOST');
-    const appDeepLink = appScheme && appHost ? `${appScheme}${appHost}/verify-email?token=${encodeURIComponent(verifyToken)}` : undefined;
+    const appScheme = this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
+    const appHost = this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
+    const appDeepLink = `${appScheme}${appHost}?token=${encodeURIComponent(verifyToken)}`;
 
     try {
       await this.mailService.sendVerificationEmail(this.smtpConfig(), savedUser.email, verifyUrl, appDeepLink);
+      console.log(`Verification email sent successfully to ${savedUser.email}`);
     } catch (error) {
-      console.warn('Failed to send verification email:', error.message);
+      console.error('Failed to send verification email:', error.message);
+      console.error('SMTP Config:', {
+        host: this.smtpConfig().host,
+        port: this.smtpConfig().port,
+        secure: this.smtpConfig().secure,
+        user: this.smtpConfig().user,
+        fromEmail: this.smtpConfig().fromEmail
+      });
     }
 
-    const { accessToken, refreshToken } = await this.issueTokensStateful(savedUser.id, savedUser.username, savedUser.email, savedUser.userType, undefined, undefined);
+    const { accessToken, refreshToken } = await this.issueTokensStateful(savedUser.id, savedUser.username || savedUser.email, savedUser.email, savedUser.userType, undefined, undefined);
     return { user: savedUser, accessToken, refreshToken };
   }
 
@@ -105,7 +136,7 @@ export class AuthService {
     const user = await this.verifyPassword(dto.identifier, dto.password);
     if (!user) throw new UnauthorizedException({ message: 'Invalid credentials', code: 'INVALID_CREDENTIALS' });
     await this.updateLastLogin(user.id);
-    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName);
+    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username || user.email, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName);
     return { user, accessToken, refreshToken };
   }
 
@@ -142,7 +173,7 @@ export class AuthService {
     if (!user) throw new UnauthorizedException({ message: 'Invalid refresh token', code: 'INVALID_REFRESH_TOKEN' });
 
     // Ротация: създаваме нов refresh токен и маркираме текущия като заменен
-    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName, token.familyId, token.id);
+    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username || user.email, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName, token.familyId, token.id);
 
     return { accessToken, refreshToken };
   }
@@ -177,6 +208,93 @@ export class AuthService {
     return { user };
   }
 
+  async getVerificationStatus(userId: string) {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    return {
+      userId: user.id,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      isActive: user.isActive
+    };
+  }
+
+  async googleAuth(googleUser: any, userType?: 'reader' | 'author') {
+    const { googleId, email, firstName, lastName, avatarUrl } = googleUser;
+
+    console.log('Google Auth - Input:', { googleId, email, firstName, lastName, avatarUrl, userType });
+
+    let user = await this.usersRepository.findOne({
+      where: [
+        { googleId },
+        { email: email.toLowerCase() }
+      ]
+    });
+
+    console.log('Google Auth - Found existing user:', user ? user.id : 'none');
+
+    if (user) {
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user = await this.usersRepository.save(user);
+        console.log('Google Auth - Updated existing user with Google ID');
+      }
+    } else {
+      const username = await this.generateUniqueUsername(email);
+      console.log('Google Auth - Generated username:', username);
+      
+      user = this.usersRepository.create({
+        googleId,
+        email: email.toLowerCase(),
+        username,
+        firstName,
+        lastName,
+        userType: userType || 'reader',
+        avatarUrl: avatarUrl || null,
+        emailVerified: true, 
+        isActive: true,
+      });
+
+      console.log('Google Auth - Created user object:', user);
+      user = await this.usersRepository.save(user);
+      console.log('Google Auth - Saved user to database:', user.id);
+    }
+
+    console.log('Google Auth - Updating last login for user:', user.id);
+    await this.updateLastLogin(user.id);
+
+    console.log('Google Auth - Issuing tokens for user:', user.id);
+    const { accessToken, refreshToken } = await this.issueTokensStateful(
+      user.id,
+      user.username || user.email,
+      user.email,
+      user.userType
+    );
+
+    console.log('Google Auth - Successfully completed for user:', user.id);
+    return { 
+      user, 
+      accessToken, 
+      refreshToken 
+    };
+  }
+
+  private async generateUniqueUsername(email: string): Promise<string> {
+    const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+    let username = baseUsername;
+    let counter = 1;
+
+    while (await this.usersRepository.findOne({ where: { username } })) {
+      username = `${baseUsername}${counter}`;
+      counter++;
+    }
+
+    return username;
+  }
+
   async resendVerification(email: string) {
     const user = await this.usersService.findByEmail(email);
     if (!user) return { message: 'If that email exists, a verification was sent.' };
@@ -185,15 +303,22 @@ export class AuthService {
 
     const webBaseUrl = this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
     const verifyUrl = `${webBaseUrl}/verify-email?token=${encodeURIComponent(token)}`;
-
-    const appScheme = this.configService.get<string>('APP_DEEP_LINK_SCHEME');
-    const appHost = this.configService.get<string>('APP_DEEP_LINK_HOST');
-    const appDeepLink = appScheme && appHost ? `${appScheme}${appHost}/verify-email?token=${encodeURIComponent(token)}` : undefined;
+    
+    const appScheme = this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
+    const appHost = this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
+    const appDeepLink = `${appScheme}${appHost}?token=${encodeURIComponent(token)}`;
 
     try {
       await this.mailService.sendVerificationEmail(this.smtpConfig(), user.email, verifyUrl, appDeepLink);
     } catch (error) {
-      console.warn('Failed to send verification email:', error.message);
+      console.error('Failed to send verification email:', error.message);
+      console.error('SMTP Config:', {
+        host: this.smtpConfig().host,
+        port: this.smtpConfig().port,
+        secure: this.smtpConfig().secure,
+        user: this.smtpConfig().user,
+        fromEmail: this.smtpConfig().fromEmail
+      });
     }
 
     return { message: 'If that email exists, a verification was sent.' };

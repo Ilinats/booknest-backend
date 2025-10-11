@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Post, Query, Res, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, Query, Res, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -12,12 +13,14 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response, @Query('deviceName') deviceName?: string, @Query('persist') persist?: string) {
     const meta = { ip: res.req.ip, userAgent: res.req.headers['user-agent'], deviceName };
@@ -42,12 +45,14 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
   @Post('reset-password')
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
@@ -70,7 +75,72 @@ export class AuthController {
   }
 
   @Post('resend-verification')
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
   resendVerification(@Body('email') email: string) {
     return this.authService.resendVerification(email);
+  }
+
+  @Post('verify-email/mobile')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async verifyEmailMobile(@Body() body: { token: string }) {
+    try {
+      const result = await this.authService.verifyEmail(body.token);
+      return {
+        success: true,
+        message: 'Email verified successfully',
+        user: result.user
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Email verification failed',
+        error: error.message
+      };
+    }
+  }
+
+  @Get('verification-status/:userId')
+  async getVerificationStatus(@Param('userId') userId: string) {
+    return this.authService.getVerificationStatus(userId);
+  }
+
+  @Post('google')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async googleAuth(@Body() body: { idToken: string; userType?: 'reader' | 'author' }) {
+    try {
+      const { OAuth2Client } = require('google-auth-library');
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      
+      if (!clientId) {
+        throw new Error('Google Client ID not configured');
+      }
+      
+      const client = new OAuth2Client(clientId);
+      
+      const ticket = await client.verifyIdToken({
+        idToken: body.idToken,
+        audience: clientId,
+      });
+      
+      const payload = ticket.getPayload();
+      
+      if (!payload) {
+        throw new Error('Invalid token payload');
+      }
+      
+      const googleUser = {
+        googleId: payload.sub,
+        email: payload.email,
+        firstName: payload.given_name || '',
+        lastName: payload.family_name || '',
+        avatarUrl: payload.picture || null,
+      };
+
+      return await this.authService.googleAuth(googleUser, body.userType);
+    } catch (error) {
+      console.error('Google mobile auth error:', error);
+      throw new Error(`Google authentication failed: ${error.message}`);
+    }
   }
 } 

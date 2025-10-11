@@ -9,6 +9,7 @@ import { UpdateApplicationDto } from './dto/update-application.dto';
 import { ApplicationStatusDto } from './dto/application-status.dto';
 import { BulkActionDto } from './dto/bulk-action.dto';
 import { UpdateReadingStatusDto } from './dto/update-reading-status.dto';
+import { ApplicationSummaryDto } from './dto/application-summary.dto';
 
 @Injectable()
 export class ApplicationsService {
@@ -61,12 +62,36 @@ export class ApplicationsService {
     return this.applicationRepo.save(application);
   }
 
-  async findMyApplications(readerId: string) {
-    return this.applicationRepo.find({
-      where: { readerId },
+  async findMyApplications(readerId: string, status?: string) {
+    const whereCondition: any = { readerId };
+    if (status) {
+      whereCondition.status = status;
+    }
+    
+    const applications = await this.applicationRepo.find({
+      where: whereCondition,
       relations: ['book', 'book.author'],
       order: { appliedAt: 'DESC' }
     });
+    
+    return applications.map(app => ({
+      id: app.id,
+      status: app.status,
+      appliedAt: app.appliedAt,
+      respondedAt: app.respondedAt,
+      applicationMessage: app.applicationMessage,
+      authorNotes: app.authorNotes,
+      bookId: app.bookId,
+      bookTitle: app.book.title,
+      bookCoverImageUrl: app.book.coverImageUrl,
+      authorName: `${app.book.author.firstName} ${app.book.author.lastName}`,
+      readingStatus: app.readingStatus,
+      readingStartedAt: app.readingStartedAt,
+      readingCompletedAt: app.readingCompletedAt,
+      copySentAt: app.copySentAt,
+      copyReceivedAt: app.copyReceivedAt,
+      reviewSubmittedAt: app.reviewSubmittedAt,
+    })) as ApplicationSummaryDto[];
   }
 
   async checkApplication(readerId: string, bookId: string) {
@@ -159,11 +184,38 @@ export class ApplicationsService {
       throw new ForbiddenException('Book not found or not owned by author');
     }
 
-    return this.applicationRepo.find({
+    const applications = await this.applicationRepo.find({
       where: { bookId },
-      relations: ['reader'],
+      relations: ['reader', 'book', 'book.author'],
       order: { appliedAt: 'DESC' }
     });
+
+    return applications.map(app => ({
+      id: app.id,
+      status: app.status,
+      appliedAt: app.appliedAt,
+      respondedAt: app.respondedAt,
+      applicationMessage: app.applicationMessage,
+      authorNotes: app.authorNotes,
+      bookId: app.bookId,
+      bookTitle: app.book.title,
+      bookCoverImageUrl: app.book.coverImageUrl,
+      authorName: `${app.book.author.firstName} ${app.book.author.lastName}`,
+      readingStatus: app.readingStatus,
+      readingStartedAt: app.readingStartedAt,
+      readingCompletedAt: app.readingCompletedAt,
+      copySentAt: app.copySentAt,
+      copyReceivedAt: app.copyReceivedAt,
+      reviewSubmittedAt: app.reviewSubmittedAt,
+      reader: {
+        id: app.reader.id,
+        username: app.reader.username,
+        email: app.reader.email,
+        firstName: app.reader.firstName,
+        lastName: app.reader.lastName,
+        profilePictureUrl: app.reader.avatarUrl,
+      }
+    })) as ApplicationSummaryDto[];
   }
 
   async updateApplicationStatus(applicationId: string, authorId: string, userType?: string, dto?: ApplicationStatusDto) {

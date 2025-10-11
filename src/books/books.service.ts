@@ -6,6 +6,7 @@ import { Series } from './entity/series.entity';
 import { BookGenre } from './entity/book-genre.entity';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
+import { BookSummaryDto } from './dto/book-summary.dto';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Application } from '../applications/entity/application.entity';
@@ -78,9 +79,69 @@ export class BooksService {
   }
 
   async findOnePublic(bookId: string) {
-    const book = await this.bookRepo.findOne({ where: { id: bookId } });
-    if (!book) throw new NotFoundException('Book not found');
-    return book;
+    try {
+      const query = `
+        SELECT 
+          b.*,
+          u.first_name,
+          u.last_name,
+          u.bio,
+          u.avatar_url,
+          s.name as series_name,
+          ARRAY_AGG(
+            JSON_BUILD_OBJECT(
+              'id', g.id,
+              'name', g.name,
+              'description', g.description
+            )
+          ) FILTER (WHERE g.id IS NOT NULL) as genres
+        FROM books b
+        INNER JOIN users u ON u.id = b.author_id
+        LEFT JOIN series s ON s.id = b.series_id
+        LEFT JOIN book_genres bg ON bg.book_id = b.id
+        LEFT JOIN genres g ON g.id = bg.genre_id
+        WHERE b.id = $1
+        GROUP BY b.id, u.first_name, u.last_name, u.bio, u.avatar_url, s.name
+      `;
+      
+      const results = await this.dataSource.query(query, [bookId]);
+      if (results.length === 0) throw new NotFoundException('Book not found');
+      
+      const row = results[0];
+      return {
+        id: row.id,
+        title: row.title,
+        shortDescription: row.short_description,
+        fullDescription: row.full_description,
+        coverImageUrl: row.cover_image_url,
+        pageCount: row.page_count,
+        ageRating: row.age_rating,
+        distributionType: row.distribution_type,
+        totalCopies: row.total_copies,
+        availableCopies: row.available_copies,
+        applicationDeadline: row.application_deadline,
+        reviewDeadlineDays: row.review_deadline_days,
+        selectionCriteria: row.selection_criteria,
+        selectionMethod: row.selection_method,
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        publishedAt: row.published_at,
+        seriesId: row.series_id,
+        seriesOrder: row.series_order,
+        seriesName: row.series_name,
+        genres: row.genres || [],
+        author: {
+          id: row.author_id,
+          name: `${row.first_name} ${row.last_name}`,
+          bio: row.bio,
+          profilePictureUrl: row.avatar_url
+        }
+      };
+    } catch (error) {
+      console.error('Error in findOnePublic:', error);
+      throw error;
+    }
   }
 
   async update(
@@ -149,41 +210,136 @@ export class BooksService {
   }
 
   async browse(params: { status?: string; search?: string; genreId?: number; ageRating?: string; distributionType?: string; publishedFrom?: string; publishedTo?: string; skip?: number; take?: number }) {
-    const qb = this.bookRepo.createQueryBuilder('b');
-    qb.where('b.status = :status', { status: params.status ?? 'active' });
+    let query = `
+      SELECT 
+        b.id,
+        b.title,
+        b.cover_image_url,
+        b.published_at,
+        b.series_id,
+        b.series_order,
+        u.first_name,
+        u.last_name,
+        s.name as series_name,
+        AVG(r.rating) as avg_rating
+      FROM books b
+      INNER JOIN users u ON u.id = b.author_id
+      LEFT JOIN series s ON s.id = b.series_id
+      LEFT JOIN reviews r ON r.application_id IN (
+        SELECT a.id FROM applications a WHERE a.book_id = b.id
+      )
+      WHERE b.status = $1
+    `;
+    
+    const queryParams: any[] = [params.status ?? 'active'];
+    let paramIndex = 2;
+    
     if (params.search) {
-      qb.andWhere('(b.title ILIKE :q OR b.short_description ILIKE :q)', { q: `%${params.search}%` });
+      query += ` AND (b.title ILIKE $${paramIndex} OR b.short_description ILIKE $${paramIndex})`;
+      queryParams.push(`%${params.search}%`);
+      paramIndex++;
     }
+    
     if (params.genreId) {
-      qb.innerJoin('book_genres', 'bg', 'bg.book_id = b.id AND bg.genre_id = :gid', { gid: params.genreId });
+      query += ` AND EXISTS (SELECT 1 FROM book_genres bg WHERE bg.book_id = b.id AND bg.genre_id = $${paramIndex})`;
+      queryParams.push(params.genreId);
+      paramIndex++;
     }
+    
     if (params.ageRating) {
-      qb.andWhere('b.age_rating = :age', { age: params.ageRating });
+      query += ` AND b.age_rating = $${paramIndex}`;
+      queryParams.push(params.ageRating);
+      paramIndex++;
     }
+    
     if (params.distributionType) {
-      qb.andWhere('b.distribution_type = :dist', { dist: params.distributionType });
+      query += ` AND b.distribution_type = $${paramIndex}`;
+      queryParams.push(params.distributionType);
+      paramIndex++;
     }
+    
     if (params.publishedFrom) {
-      qb.andWhere('b.published_at >= :from', { from: params.publishedFrom });
+      query += ` AND b.published_at >= $${paramIndex}`;
+      queryParams.push(params.publishedFrom);
+      paramIndex++;
     }
+    
     if (params.publishedTo) {
-      qb.andWhere('b.published_at <= :to', { to: params.publishedTo });
+      query += ` AND b.published_at <= $${paramIndex}`;
+      queryParams.push(params.publishedTo);
+      paramIndex++;
     }
-    qb.orderBy('b.published_at', 'DESC', 'NULLS LAST');
-    if (params.skip !== undefined) qb.skip(params.skip);
-    if (params.take !== undefined) qb.take(params.take);
-    return qb.getMany();
+    
+    query += `
+      GROUP BY b.id, u.first_name, u.last_name, s.name
+      ORDER BY b.published_at DESC NULLS LAST
+    `;
+    
+    if (params.take !== undefined) {
+      query += ` LIMIT $${paramIndex}`;
+      queryParams.push(params.take);
+      paramIndex++;
+    }
+    
+    if (params.skip !== undefined) {
+      query += ` OFFSET $${paramIndex}`;
+      queryParams.push(params.skip);
+    }
+    
+    const results = await this.dataSource.query(query, queryParams);
+    
+    return results.map(row => ({
+      id: row.id,
+      title: row.title,
+      authorName: `${row.first_name} ${row.last_name}`,
+      coverImageUrl: row.cover_image_url,
+      rating: row.avg_rating ? Math.round(row.avg_rating * 10) / 10 : null,
+      seriesName: row.series_name,
+      seriesOrder: row.series_order,
+      publishedAt: row.published_at,
+    })) as BookSummaryDto[];
   }
 
   async featured() {
     console.log('Fetching featured books...');
-    const books = await this.bookRepo.find({ 
-      where: { status: 'active' }, 
-      order: { publishedAt: 'DESC' }, 
-      take: 10 
-    });
+    const query = `
+      SELECT 
+        b.id,
+        b.title,
+        b.cover_image_url,
+        b.published_at,
+        b.series_id,
+        b.series_order,
+        u.first_name,
+        u.last_name,
+        s.name as series_name,
+        AVG(r.rating) as avg_rating
+      FROM books b
+      INNER JOIN users u ON u.id = b.author_id
+      LEFT JOIN series s ON s.id = b.series_id
+      LEFT JOIN reviews r ON r.application_id IN (
+        SELECT a.id FROM applications a WHERE a.book_id = b.id
+      )
+      WHERE b.status = 'active'
+      GROUP BY b.id, u.first_name, u.last_name, s.name
+      ORDER BY b.published_at DESC NULLS LAST
+      LIMIT 10
+    `;
+    
+    const results = await this.dataSource.query(query);
+    
+    const books: BookSummaryDto[] = results.map(row => ({
+      id: row.id,
+      title: row.title,
+      authorName: `${row.first_name} ${row.last_name}`,
+      coverImageUrl: row.cover_image_url,
+      rating: row.avg_rating ? Math.round(row.avg_rating * 10) / 10 : null,
+      seriesName: row.series_name,
+      seriesOrder: row.series_order,
+      publishedAt: row.published_at,
+    }));
+    
     console.log('Featured books found:', books.length);
-    console.log('Featured books:', books.map(b => ({ id: b.id, title: b.title, status: b.status, publishedAt: b.publishedAt })));
     return books;
   }
 
@@ -204,13 +360,28 @@ export class BooksService {
       if (opts?.take !== undefined) qb.take(opts.take);
       
       const query = `
-        SELECT b.*, SUM(ugp.preference_level) as score
+        SELECT 
+          b.id,
+          b.title,
+          b.cover_image_url,
+          b.published_at,
+          b.series_id,
+          b.series_order,
+          u.first_name,
+          u.last_name,
+          s.name as series_name,
+          AVG(r.rating) as avg_rating
         FROM books b
+        INNER JOIN users u ON u.id = b.author_id
+        LEFT JOIN series s ON s.id = b.series_id
+        LEFT JOIN reviews r ON r.application_id IN (
+          SELECT a.id FROM applications a WHERE a.book_id = b.id
+        )
         INNER JOIN book_genres bg ON bg.book_id = b.id
         INNER JOIN user_genre_preferences ugp ON ugp.genre_id = bg.genre_id AND ugp.user_id = $1
         WHERE b.status = $2
-        GROUP BY b.id
-        ORDER BY score DESC, b.published_at DESC NULLS LAST
+        GROUP BY b.id, u.first_name, u.last_name, s.name
+        ORDER BY SUM(ugp.preference_level) DESC, b.published_at DESC NULLS LAST
         ${opts?.take ? `LIMIT ${opts.take}` : ''}
         ${opts?.skip ? `OFFSET ${opts.skip}` : ''}
       `;
@@ -222,34 +393,16 @@ export class BooksService {
         return this.featured();
       }
       
-      const books = results.map(row => {
-        const book = new Book();
-        book.id = row.id;
-        book.authorId = row.author_id;
-        book.title = row.title;
-        book.shortDescription = row.short_description;
-        book.fullDescription = row.full_description;
-        book.coverImageUrl = row.cover_image_url;
-        book.pageCount = row.page_count;
-        book.ageRating = row.age_rating;
-        book.distributionType = row.distribution_type;
-        book.fileUrl = row.file_url;
-        book.fileSize = row.file_size;
-        book.fileType = row.file_type;
-        book.totalCopies = row.total_copies;
-        book.availableCopies = row.available_copies;
-        book.applicationDeadline = row.application_deadline;
-        book.reviewDeadlineDays = row.review_deadline_days;
-        book.selectionCriteria = row.selection_criteria;
-        book.selectionMethod = row.selection_method;
-        book.status = row.status;
-        book.createdAt = row.created_at;
-        book.updatedAt = row.updated_at;
-        book.publishedAt = row.published_at;
-        book.seriesId = row.series_id;
-        book.seriesOrder = row.series_order;
-        return book;
-      });
+      const books: BookSummaryDto[] = results.map(row => ({
+        id: row.id,
+        title: row.title,
+        authorName: `${row.first_name} ${row.last_name}`,
+        coverImageUrl: row.cover_image_url,
+        rating: row.avg_rating ? Math.round(row.avg_rating * 10) / 10 : null,
+        seriesName: row.series_name,
+        seriesOrder: row.series_order,
+        publishedAt: row.published_at,
+      }));
       
       console.log('Recommended books found:', books.length);
       return books;

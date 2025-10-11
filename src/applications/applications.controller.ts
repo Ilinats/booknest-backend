@@ -22,8 +22,11 @@ export class ApplicationsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('my')
-  findMy(@CurrentUser('sub') readerId: string) {
-    return this.applicationsService.findMyApplications(readerId);
+  findMy(
+    @CurrentUser('sub') readerId: string,
+    @Query('status') status?: string
+  ) {
+    return this.applicationsService.findMyApplications(readerId, status);
   }
 
   @UseGuards(JwtAuthGuard)

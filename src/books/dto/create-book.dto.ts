@@ -73,12 +73,10 @@ export class CreateBookDto {
   @IsEnum(['author_selects', 'first_come', 'lottery'] as const)
   selectionMethod?: 'author_selects' | 'first_come' | 'lottery';
 
-  // Genres
   @IsOptional()
   @IsArray()
   genreIds?: number[];
 
-  // Series
   @IsOptional()
   @IsUUID()
   seriesId?: string;

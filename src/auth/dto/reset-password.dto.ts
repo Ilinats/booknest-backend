@@ -1,10 +1,11 @@
-import { IsString, Length } from 'class-validator';
+import { IsString, Length, MinLength } from 'class-validator';
 
 export class ResetPasswordDto {
   @IsString()
-  token!: string;
+  @Length(6, 6, { message: 'Verification code must be exactly 6 digits' })
+  code!: string;
 
   @IsString()
-  @Length(8, 128)
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
   newPassword!: string;
-} 
+}

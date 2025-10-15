@@ -10,9 +10,10 @@ import { BooksController } from './books.controller';
 import { SeriesService } from './series.service';
 import { SeriesController } from './series.controller';
 import { AuthModule } from '../auth/auth.module';
+import { FilesModule } from '../files/files.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Book, Series, BookGenre, Application, Review]), AuthModule],
+  imports: [TypeOrmModule.forFeature([Book, Series, BookGenre, Application, Review]), AuthModule, FilesModule],
   providers: [BooksService, SeriesService],
   controllers: [BooksController, SeriesController],
   exports: [BooksService],

@@ -66,6 +66,21 @@ export class UsersController {
     return this.usersService.findAll({ search, skip: parsedSkip, take: parsedTake });
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('search')
+  async searchUsers(
+    @CurrentUser('sub') userId: string,
+    @Query('q') query: string,
+    @Query('limit') limit?: string
+  ) {
+    const parsedLimit = limit ? parseInt(limit, 10) : 20;
+    return this.usersService.findAll({ 
+      search: query, 
+      skip: 0, 
+      take: Math.min(parsedLimit, 50) 
+    });
+  }
+
   @Get(':id')
   findOne(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.usersService.findOneById(id);

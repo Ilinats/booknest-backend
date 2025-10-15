@@ -6,6 +6,8 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { Response, Request } from 'express';
 
 @Controller('auth')
@@ -51,34 +53,6 @@ export class AuthController {
     return this.authService.forgotPassword(dto);
   }
 
-  @Post('reset-password')
-  @Throttle({ default: { limit: 5, ttl: 300000 } })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto);
-  }
-
-  @Get('verify-email')
-  @Header('Content-Type', 'text/html; charset=utf-8')
-  async verifyEmail(@Query('token') token: string, @Res() res: Response) {
-    try {
-      await this.authService.verifyEmail(token);
-      const appScheme = process.env.APP_DEEP_LINK_SCHEME;
-      const appHost = process.env.APP_DEEP_LINK_HOST;
-      const deepLink = appScheme && appHost ? `${appScheme}${appHost}/verified` : null;
-      const html = `<!doctype html><html><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>BookNest - Email Verified</title></head><body style=\"font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;text-align:center\"><h2>✅ Email verified</h2><p>You can close this window.</p>${deepLink ? `<p><a href=\"${deepLink}\" style=\"display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px\">Back to App</a></p>` : ''}</body></html>`;
-      return res.status(200).send(html);
-    } catch {
-      const html = `<!doctype html><html><head><meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>BookNest - Verification Error</title></head><body style=\"font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;text-align:center\"><h2>❌ Verification failed</h2><p>The link is invalid or expired.</p></body></html>`;
-      return res.status(400).send(html);
-    }
-  }
-
-  @Post('resend-verification')
-  @Throttle({ default: { limit: 3, ttl: 300000 } })
-  resendVerification(@Body('email') email: string) {
-    return this.authService.resendVerification(email);
-  }
 
   @Post('verify-email/mobile')
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
@@ -142,5 +116,33 @@ export class AuthController {
       console.error('Google mobile auth error:', error);
       throw new Error(`Google authentication failed: ${error.message}`);
     }
+  }
+
+  // New verification code endpoints
+  @Post('verify-email')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmailWithCode(dto);
+  }
+
+  @Post('request-password-reset')
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+    return this.authService.requestPasswordReset(dto);
+  }
+
+  @Post('reset-password')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPasswordWithCode(dto);
+  }
+
+  @Post('resend-verification')
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
+  async resendVerification(@Body() body: { email: string }) {
+    return this.authService.resendVerificationCode(body.email);
   }
 } 

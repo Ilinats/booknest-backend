@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
@@ -15,6 +15,9 @@ import { User } from '../users/entity/user.entity';
 import * as argon2 from 'argon2';
 import { RefreshToken } from './entity/refresh-token.entity';
 import { UserAddressService } from '../users/user-address.service';
+import { VerificationCodeService } from './verification-code.service';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 
 @Injectable()
 export class AuthService {
@@ -24,6 +27,7 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
     private readonly userAddressService: UserAddressService,
+    private readonly verificationCodeService: VerificationCodeService,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     @InjectRepository(RefreshToken)
@@ -104,28 +108,16 @@ export class AuthService {
       await this.userAddressService.create(savedUser.id, dto.address);
     }
 
-    const verifyToken = crypto.randomBytes(32).toString('hex');
-    await this.setEmailVerificationToken(savedUser.id, verifyToken);
-
-    const webBaseUrl = this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
-    const verifyUrl = `${webBaseUrl}/verify-email?token=${encodeURIComponent(verifyToken)}`;
-
-    const appScheme = this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
-    const appHost = this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
-    const appDeepLink = `${appScheme}${appHost}?token=${encodeURIComponent(verifyToken)}`;
+    const verificationCode = await this.verificationCodeService.createVerificationCode(
+      savedUser.id, 
+      'email_verification'
+    );
 
     try {
-      await this.mailService.sendVerificationEmail(this.smtpConfig(), savedUser.email, verifyUrl, appDeepLink);
+      await this.verificationCodeService.sendVerificationEmail(savedUser, verificationCode.code);
       console.log(`Verification email sent successfully to ${savedUser.email}`);
     } catch (error) {
       console.error('Failed to send verification email:', error.message);
-      console.error('SMTP Config:', {
-        host: this.smtpConfig().host,
-        port: this.smtpConfig().port,
-        secure: this.smtpConfig().secure,
-        user: this.smtpConfig().user,
-        fromEmail: this.smtpConfig().fromEmail
-      });
     }
 
     const { accessToken, refreshToken } = await this.issueTokensStateful(savedUser.id, savedUser.username || savedUser.email, savedUser.email, savedUser.userType, undefined, undefined);
@@ -197,11 +189,6 @@ export class AuthService {
     return { message: 'If that email exists, a reset link has been sent.' };
   }
 
-  async resetPassword(dto: ResetPasswordDto) {
-    if (!dto.token || !dto.newPassword) throw new BadRequestException({ message: 'Invalid payload', code: 'INVALID_PAYLOAD' });
-    await this.resetPasswordByToken(dto.token, dto.newPassword);
-    return { message: 'Password has been reset.' };
-  }
 
   async verifyEmail(token: string) {
     const user = await this.verifyEmailByToken(token);
@@ -446,5 +433,99 @@ export class AuthService {
 
   private async updateLastLogin(userId: string, at: Date = new Date()): Promise<void> {
     await this.usersRepository.update({ id: userId }, { lastLogin: at });
+  }
+
+  async verifyEmailWithCode(dto: VerifyEmailDto) {
+    const result = await this.verificationCodeService.verifyCode(dto.code, 'email_verification');
+    
+    if (!result.isValid || !result.user) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    await this.usersRepository.update({ id: result.user.id }, { emailVerified: true });
+
+    return {
+      success: true,
+      message: 'Email verified successfully',
+      user: result.user
+    };
+  }
+
+  async requestPasswordReset(dto: RequestPasswordResetDto) {
+    const user = await this.usersRepository.findOne({ where: { email: dto.email } });
+    
+    if (!user) {
+      return {
+        success: true,
+        message: 'If an account with that email exists, a password reset code has been sent'
+      };
+    }
+
+    const verificationCode = await this.verificationCodeService.createVerificationCode(
+      user.id, 
+      'password_reset'
+    );
+
+    await this.verificationCodeService.sendPasswordResetEmail(user, verificationCode.code);
+
+    return {
+      success: true,
+      message: 'If an account with that email exists, a password reset code has been sent'
+    };
+  }
+
+  async resetPasswordWithCode(dto: ResetPasswordDto) {
+    const result = await this.verificationCodeService.verifyCode(dto.code, 'password_reset');
+    
+    if (!result.isValid || !result.user) {
+      throw new UnauthorizedException('Invalid or expired reset code');
+    }
+
+    const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
+
+    await this.usersRepository.update({ id: result.user.id }, { passwordHash });
+
+    return {
+      success: true,
+      message: 'Password reset successfully'
+    };
+  }
+
+  async resendVerificationCode(email: string) {
+    console.log('Resend verification code for:', email);
+    
+    const user = await this.usersRepository.findOne({ where: { email } });
+    
+    if (!user) {
+      console.log('User not found for email:', email);
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.emailVerified) {
+      console.log('Email already verified for:', email);
+      throw new BadRequestException('Email is already verified');
+    }
+
+    console.log('Creating verification code for user:', user.id);
+    
+    const verificationCode = await this.verificationCodeService.createVerificationCode(
+      user.id, 
+      'email_verification'
+    );
+
+    console.log('Verification code created:', verificationCode.code);
+
+    try {
+      await this.verificationCodeService.sendVerificationEmail(user, verificationCode.code);
+      console.log('Verification email sent successfully to:', email);
+    } catch (error) {
+      console.error('Failed to send verification email:', error);
+      throw error;
+    }
+
+    return {
+      success: true,
+      message: 'Verification code sent successfully'
+    };
   }
 } 

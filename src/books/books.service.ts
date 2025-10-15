@@ -124,6 +124,9 @@ export class BooksService {
         selectionCriteria: row.selection_criteria,
         selectionMethod: row.selection_method,
         status: row.status,
+        fileUrl: row.file_url,
+        fileSize: row.file_size,
+        fileType: row.file_type,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         publishedAt: row.published_at,
@@ -723,6 +726,49 @@ export class BooksService {
       month: row.month,
       count: parseInt(row.count)
     }));
+  }
+
+  async findOneForAuthor(authorId: string, bookId: string): Promise<Book> {
+    const book = await this.bookRepo.findOne({
+      where: { id: bookId, authorId },
+    });
+
+    if (!book) {
+      throw new NotFoundException('Book not found or not owned by author');
+    }
+
+    return book;
+  }
+
+  async updateFileInfo(
+    authorId: string,
+    authorUserType: string | undefined,
+    bookId: string,
+    fileUrl: string,
+    fileSize: number,
+    fileType: string,
+  ): Promise<Book> {
+    this.ensureAuthor(authorUserType);
+
+    const book = await this.findOneForAuthor(authorId, bookId);
+
+    book.fileUrl = fileUrl;
+    book.fileSize = fileSize.toString();
+    book.fileType = fileType;
+
+    return this.bookRepo.save(book);
+  }
+
+  async checkUserApplicationStatus(userId: string, bookId: string): Promise<boolean> {
+    const application = await this.applicationRepo.findOne({
+      where: {
+        readerId: userId,
+        bookId: bookId,
+        status: 'approved'
+      }
+    });
+
+    return !!application;
   }
 }
 

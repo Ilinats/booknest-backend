@@ -18,7 +18,6 @@ export class ApplicationSummaryDto {
   copyReceivedAt?: Date | null;
   reviewSubmittedAt?: Date | null;
   
-  // Reader information (for author management)
   reader?: {
     id: string;
     username: string;

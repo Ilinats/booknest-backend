@@ -1,5 +1,7 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards, UsePipes, ValidationPipe, UseInterceptors, UploadedFile, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { BooksService } from './books.service';
+import { FilesService } from '../files/files.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '../auth/current-user.decorator';
 import { CreateBookDto } from './dto/create-book.dto';
@@ -7,7 +9,10 @@ import { UpdateBookDto } from './dto/update-book.dto';
 
 @Controller('books')
 export class BooksController {
-  constructor(private readonly booksService: BooksService) {}
+  constructor(
+    private readonly booksService: BooksService,
+    private readonly filesService: FilesService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()
@@ -99,14 +104,72 @@ export class BooksController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':bookId/upload')
-  upload(@CurrentUser() user: JwtPayload, @Param('bookId', new ParseUUIDPipe()) bookId: string) {
-    return { message: 'Upload endpoint not implemented yet', bookId };
+  @UseInterceptors(FileInterceptor('file'))
+  async upload(
+    @CurrentUser() user: JwtPayload, 
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+
+    const uploadResult = await this.filesService.uploadFile(file, 'books');
+    
+    const updatedBook = await this.booksService.updateFileInfo(
+      user.sub, 
+      user.userType as any, 
+      bookId, 
+      uploadResult.fileUrl,
+      uploadResult.fileSize,
+      uploadResult.fileType
+    );
+
+    return {
+      success: true,
+      message: 'File uploaded successfully',
+      data: {
+        book: updatedBook,
+        file: {
+          url: uploadResult.fileUrl,
+          size: uploadResult.fileSize,
+          type: uploadResult.fileType,
+          originalName: file.originalname,
+        },
+      },
+    };
   }
 
   @UseGuards(JwtAuthGuard)
   @Get(':bookId/download')
-  download(@CurrentUser() user: JwtPayload, @Param('bookId', new ParseUUIDPipe()) bookId: string) {
-    return { message: 'Download endpoint not implemented yet', bookId };
+  async download(@CurrentUser() user: JwtPayload, @Param('bookId', new ParseUUIDPipe()) bookId: string) {
+    const hasApprovedApplication = await this.booksService.checkUserApplicationStatus(user.sub, bookId);
+    
+    if (!hasApprovedApplication) {
+      throw new ForbiddenException('You must have an approved application to download this book');
+    }
+
+    const book = await this.booksService.findOnePublic(bookId);
+    
+    if (!book.fileUrl) {
+      throw new BadRequestException('No file available for this book');
+    }
+
+    const fileKey = book.fileUrl.split('/').slice(-2).join('/');
+    
+    const downloadUrl = await this.filesService.getFileDownloadUrl(fileKey);
+
+    return {
+      success: true,
+      message: 'Download URL generated successfully',
+      data: {
+        downloadUrl,
+        expiresIn: 3600, // 1 hour
+        fileName: book.title,
+        fileSize: book.fileSize,
+        fileType: book.fileType,
+      },
+    };
   }
 
   @UseGuards(JwtAuthGuard)

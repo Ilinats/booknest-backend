@@ -118,7 +118,6 @@ export class AuthController {
     }
   }
 
-  // New verification code endpoints
   @Post('verify-email')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))

@@ -84,6 +84,11 @@ export class ReviewsService {
     return review;
   }
 
+  /**
+   * Update a review. Only the reviewer (reader) who created the review can update it.
+   * Only reviewers can control the visibility (isPublic) of their reviews.
+   * Authors cannot modify reviews.
+   */
   async update(reviewId: string, readerId: string, dto: UpdateReviewDto) {
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId },
@@ -94,6 +99,8 @@ export class ReviewsService {
       throw new NotFoundException('Review not found');
     }
 
+    // Only the reviewer who created the review can update it
+    // Authors cannot modify reviews
     if (review.application.readerId !== readerId) {
       throw new ForbiddenException('Can only update your own reviews');
     }
@@ -110,6 +117,7 @@ export class ReviewsService {
       reviewType: dto.reviewType ?? review.reviewType,
       reviewContent: dto.reviewContent ?? review.reviewContent,
       reviewUrls: dto.reviewUrls ?? review.reviewUrls,
+      // Only reviewers can control visibility - authors cannot change this
       isPublic: dto.isPublic ?? review.isPublic,
       wordCount,
     });
@@ -117,6 +125,10 @@ export class ReviewsService {
     return this.reviewRepo.save(updatedReview);
   }
 
+  /**
+   * Remove a review. Only the reviewer (reader) who created the review can delete it.
+   * Authors cannot delete reviews from their books.
+   */
   async remove(reviewId: string, readerId: string) {
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId },
@@ -127,6 +139,8 @@ export class ReviewsService {
       throw new NotFoundException('Review not found');
     }
 
+    // Only the reviewer who created the review can delete it
+    // Authors cannot delete reviews from their books
     if (review.application.readerId !== readerId) {
       throw new ForbiddenException('Can only delete your own reviews');
     }
@@ -141,14 +155,31 @@ export class ReviewsService {
     return { success: true };
   }
 
-  async getBookReviews(bookId: string, includePrivate: boolean = false, userId?: string) {
+  /**
+   * Get reviews for a book.
+   * Authors can see all reviews (including private ones) for their own books.
+   * Other users can only see public reviews unless includePrivate is true.
+   */
+  async getBookReviews(bookId: string, includePrivate: boolean = false, userId?: string, userType?: string) {
+    // Check if user is the author of this book
+    let isAuthor = false;
+    if (userType === 'author' && userId) {
+      const application = await this.applicationRepo.findOne({
+        where: { bookId },
+        relations: ['book']
+      });
+      isAuthor = application?.book?.authorId === userId;
+    }
+
     const query = this.reviewRepo
       .createQueryBuilder('review')
       .leftJoinAndSelect('review.application', 'application')
       .leftJoinAndSelect('application.reader', 'reader')
       .where('application.bookId = :bookId', { bookId });
 
-    if (!includePrivate) {
+    // If user is the author, they can see all reviews (including private ones)
+    // Otherwise, only show public reviews unless includePrivate is explicitly true
+    if (!isAuthor && !includePrivate) {
       query.andWhere('review.isPublic = :isPublic', { isPublic: true });
     }
 

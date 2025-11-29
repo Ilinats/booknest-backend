@@ -22,6 +22,13 @@ export class HttpErrorFilter implements ExceptionFilter {
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = 'Internal server error';
+      // Log the actual error for debugging
+      if (exception instanceof Error) {
+        console.error('Unhandled error:', exception.message);
+        console.error('Stack trace:', exception.stack);
+      } else {
+        console.error('Unhandled error (non-Error):', exception);
+      }
     }
 
     const payload = {

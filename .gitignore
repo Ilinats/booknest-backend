@@ -41,6 +41,7 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+src/notifications/booknest-86f40-firebase-adminsdk-fbsvc-286b081154.json
 
 # temp directory
 .temp

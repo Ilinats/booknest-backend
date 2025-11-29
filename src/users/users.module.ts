@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
@@ -18,6 +18,7 @@ import { UserProfileService } from './user-profile.service';
 import { AuthorFollowService } from './author-follow.service';
 import { UserActivityService } from './user-activity.service';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -31,7 +32,8 @@ import { AuthModule } from '../auth/auth.module';
       Application, 
       Review
     ]), 
-    AuthModule
+    AuthModule,
+    forwardRef(() => NotificationsModule)
   ],
   controllers: [
     UsersController, 

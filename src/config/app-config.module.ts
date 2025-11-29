@@ -18,7 +18,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
         password: configService.get<string>('POSTGRES_PASSWORD'),
         database: configService.get<string>('POSTGRES_DB'),
         autoLoadEntities: true,
-        synchronize: true, // Когато хостна базата, да го сменя на false
+        synchronize: true,
       }),
       inject: [ConfigService],
     }),

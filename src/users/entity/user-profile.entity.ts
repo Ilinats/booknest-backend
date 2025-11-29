@@ -41,6 +41,16 @@ export class UserProfile {
   @Column({ name: 'email_notifications', type: 'boolean', default: true })
   emailNotifications!: boolean;
 
+  @Column({ name: 'notification_preferences', type: 'jsonb', nullable: true })
+  notificationPreferences?: {
+    friendRequests?: boolean;
+    friendRequestAccepted?: boolean;
+    applicationApproved?: boolean;
+    applicationRejected?: boolean;
+    reviewDeadlineReminders?: boolean;
+    authorBookPublished?: boolean;
+  } | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt!: Date;
 

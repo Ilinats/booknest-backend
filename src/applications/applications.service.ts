@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, Inject, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Application } from './entity/application.entity';
@@ -17,6 +17,9 @@ export class ApplicationsService {
     @InjectRepository(Application) private readonly applicationRepo: Repository<Application>,
     @InjectRepository(Book) private readonly bookRepo: Repository<Book>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @Optional()
+    @Inject('NotificationService')
+    private readonly notificationService?: any,
   ) {}
 
   private ensureAuthor(userType?: string) {
@@ -247,7 +250,30 @@ export class ApplicationsService {
       await this.bookRepo.decrement({ id: application.bookId }, 'availableCopies', 1);
     }
 
-    return this.applicationRepo.save(application);
+    const saved = await this.applicationRepo.save(application);
+
+    if (this.notificationService) {
+      const book = await this.bookRepo.findOne({ where: { id: application.bookId } });
+      if (book) {
+        if (saved.status === 'approved') {
+          this.notificationService.notifyApplicationApproved(
+            application.readerId,
+            application.bookId,
+            book.title,
+            application.id,
+          ).catch((err: any) => console.error('Failed to send approval notification:', err));
+        } else if (saved.status === 'rejected') {
+          this.notificationService.notifyApplicationRejected(
+            application.readerId,
+            application.bookId,
+            book.title,
+            application.id,
+          ).catch((err: any) => console.error('Failed to send rejection notification:', err));
+        }
+      }
+    }
+
+    return saved;
   }
 
   async bulkAction(authorId: string, userType?: string, dto?: BulkActionDto) {

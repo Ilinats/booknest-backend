@@ -13,5 +13,6 @@ export default new DataSource({
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB,
   entities: [isTsNode ? 'src/**/*.entity.ts' : 'dist/**/*.entity.js'],
-  migrations: ['dist/migrations/*.js'],
+  migrations: [isTsNode ? 'src/migrations/*.ts' : 'dist/migrations/*.js'],
+  migrationsTableName: 'migrations',
 });

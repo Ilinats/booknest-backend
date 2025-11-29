@@ -49,7 +49,7 @@ export class Book {
   @Column({ name: 'file_size', type: 'bigint', nullable: true })
   fileSize?: string | null;
 
-  @Column({ name: 'file_type', type: 'varchar', length: 10, nullable: true })
+  @Column({ name: 'file_type', type: 'varchar', length: 100, nullable: true })
   fileType?: string | null;
 
   @Column({ name: 'total_copies', type: 'int', default: 1 })

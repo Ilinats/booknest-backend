@@ -19,13 +19,13 @@ export class AuthorFollowService {
     private readonly applicationRepository: Repository<Application>,
   ) {}
 
-  async followAuthor(followerId: string, authorUsername: string): Promise<AuthorFollow> {
-    if (followerId === authorUsername) {
+  async followAuthor(followerId: string, authorId: string): Promise<AuthorFollow> {
+    if (followerId === authorId) {
       throw new BadRequestException('Cannot follow yourself');
     }
 
     const author = await this.userRepository.findOne({
-      where: { username: authorUsername, userType: 'author' }
+      where: { id: authorId, userType: 'author' }
     });
 
     if (!author) {
@@ -33,7 +33,7 @@ export class AuthorFollowService {
     }
 
     const existingFollow = await this.authorFollowRepository.findOne({
-      where: { followerId, authorId: author.id }
+      where: { followerId, authorId }
     });
 
     if (existingFollow) {
@@ -42,7 +42,7 @@ export class AuthorFollowService {
 
     const follow = this.authorFollowRepository.create({
       followerId,
-      authorId: author.id
+      authorId
     });
 
     return this.authorFollowRepository.save(follow);

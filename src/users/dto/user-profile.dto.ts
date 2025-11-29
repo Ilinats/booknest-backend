@@ -86,4 +86,15 @@ export class UpdateNotificationSettingsDto {
   @IsOptional()
   @IsBoolean()
   emailNotifications?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  notificationPreferences?: {
+    friendRequests?: boolean;
+    friendRequestAccepted?: boolean;
+    applicationApproved?: boolean;
+    applicationRejected?: boolean;
+    reviewDeadlineReminders?: boolean;
+    authorBookPublished?: boolean;
+  };
 }

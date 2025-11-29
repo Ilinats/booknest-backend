@@ -164,7 +164,6 @@ export class AuthService {
     const user = await this.usersRepository.findOne({ where: { id: token.userId } });
     if (!user) throw new UnauthorizedException({ message: 'Invalid refresh token', code: 'INVALID_REFRESH_TOKEN' });
 
-    // Ротация: създаваме нов refresh токен и маркираме текущия като заменен
     const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username || user.email, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName, token.familyId, token.id);
 
     return { accessToken, refreshToken };

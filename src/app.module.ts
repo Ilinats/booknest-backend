@@ -12,6 +12,7 @@ import { UserGenrePreferencesModule } from './genres/user-genre-preferences.modu
 import { BooksModule } from './books/books.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { FilesModule } from './files/files.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { SuccessResponseInterceptor } from './common/success-response.interceptor';
 import { ErrorResponseFilter } from './common/error-response.filter';
 
@@ -29,7 +30,8 @@ import { ErrorResponseFilter } from './common/error-response.filter';
     UserGenrePreferencesModule, 
     BooksModule, 
     ApplicationsModule,
-    FilesModule
+    FilesModule,
+    NotificationsModule
   ],
   controllers: [AppController],
   providers: [

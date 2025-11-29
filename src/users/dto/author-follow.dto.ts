@@ -3,7 +3,7 @@ import { IsString, IsNotEmpty } from 'class-validator';
 export class FollowAuthorDto {
   @IsString()
   @IsNotEmpty()
-  username!: string;
+  authorId!: string;
 }
 
 export class UnfollowAuthorDto {

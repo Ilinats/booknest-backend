@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Optional, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere } from 'typeorm';
 import { Friend, FriendStatus } from './entity/friend.entity';
@@ -11,6 +11,9 @@ export class FriendsService {
     private readonly friendRepository: Repository<Friend>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @Optional()
+    @Inject('NotificationService')
+    private readonly notificationService?: any,
   ) {}
 
   async sendFriendRequest(requesterId: string, addresseeUsername: string): Promise<Friend> {
@@ -49,7 +52,19 @@ export class FriendsService {
       status: 'pending'
     });
 
-    return this.friendRepository.save(friendRequest);
+    const saved = await this.friendRepository.save(friendRequest);
+
+    if (this.notificationService) {
+      const requester = await this.userRepository.findOne({ where: { id: requesterId } });
+      const requesterName = requester ? `${requester.firstName} ${requester.lastName}` : 'Someone';
+      this.notificationService.notifyFriendRequestReceived(
+        addressee.id,
+        requesterId,
+        requesterName,
+      ).catch((err: any) => console.error('Failed to send friend request notification:', err));
+    }
+
+    return saved;
   }
 
   async acceptFriendRequest(userId: string, requesterId: string): Promise<Friend> {
@@ -62,7 +77,19 @@ export class FriendsService {
     }
 
     friendRequest.status = 'accepted';
-    return this.friendRepository.save(friendRequest);
+    const saved = await this.friendRepository.save(friendRequest);
+
+    if (this.notificationService) {
+      const accepter = await this.userRepository.findOne({ where: { id: userId } });
+      const accepterName = accepter ? `${accepter.firstName} ${accepter.lastName}` : 'Someone';
+      this.notificationService.notifyFriendRequestAccepted(
+        requesterId,
+        userId,
+        accepterName,
+      ).catch((err: any) => console.error('Failed to send friend accepted notification:', err));
+    }
+
+    return saved;
   }
 
   async declineFriendRequest(userId: string, requesterId: string): Promise<void> {

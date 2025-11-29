@@ -46,11 +46,17 @@ export class ReviewsController {
 
   @Get('books/:bookId')
   getBookReviews(
+    @CurrentUser() user: JwtPayload | undefined,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
     @Query('includePrivate') includePrivate?: string
   ) {
     const includePrivateFlag = includePrivate === 'true';
-    return this.reviewsService.getBookReviews(bookId, includePrivateFlag);
+    return this.reviewsService.getBookReviews(
+      bookId, 
+      includePrivateFlag, 
+      user?.sub, 
+      user?.userType
+    );
   }
 
   @Get('users/:userId')

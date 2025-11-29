@@ -20,13 +20,13 @@ export class AuthorFollowsController {
     private readonly authorFollowService: AuthorFollowService,
   ) {}
 
-  @Post('follow/:username')
+  @Post('follow/:authorId')
   async followAuthor(
     @Request() req: any,
-    @Param('username') username: string
+    @Param('authorId') authorId: string
   ) {
     const userId = getUserId(req);
-    return this.authorFollowService.followAuthor(userId, username);
+    return this.authorFollowService.followAuthor(userId, authorId);
   }
 
   @Delete('unfollow/:authorId')

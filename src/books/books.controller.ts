@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards, UsePipes, ValidationPipe, UseInterceptors, UploadedFile, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { BooksService } from './books.service';
 import { FilesService } from '../files/files.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -104,40 +105,124 @@ export class BooksController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':bookId/upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', {
+    storage: memoryStorage(),
+    limits: {
+      fileSize: 100 * 1024 * 1024, // 100MB
+    },
+  }))
   async upload(
     @CurrentUser() user: JwtPayload, 
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    if (!file) {
-      throw new BadRequestException('No file provided');
-    }
+    try {
+      if (!file) {
+        throw new BadRequestException('No file provided');
+      }
 
-    const uploadResult = await this.filesService.uploadFile(file, 'books');
-    
-    const updatedBook = await this.booksService.updateFileInfo(
-      user.sub, 
-      user.userType as any, 
-      bookId, 
-      uploadResult.fileUrl,
-      uploadResult.fileSize,
-      uploadResult.fileType
-    );
+      if (!file.buffer) {
+        throw new BadRequestException('File buffer is missing. Please ensure the file is properly uploaded.');
+      }
 
-    return {
-      success: true,
-      message: 'File uploaded successfully',
-      data: {
-        book: updatedBook,
-        file: {
-          url: uploadResult.fileUrl,
-          size: uploadResult.fileSize,
-          type: uploadResult.fileType,
-          originalName: file.originalname,
+      console.log('Uploading file:', {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        hasBuffer: !!file.buffer,
+      });
+
+      const uploadResult = await this.filesService.uploadFile(file, 'books');
+      
+      const updatedBook = await this.booksService.updateFileInfo(
+        user.sub, 
+        user.userType as any, 
+        bookId, 
+        uploadResult.fileUrl,
+        uploadResult.fileSize,
+        uploadResult.fileType
+      );
+
+      return {
+        success: true,
+        message: 'File uploaded successfully',
+        data: {
+          book: updatedBook,
+          file: {
+            url: uploadResult.fileUrl,
+            size: uploadResult.fileSize,
+            type: uploadResult.fileType,
+            originalName: file.originalname,
+          },
         },
-      },
-    };
+      };
+    } catch (error) {
+      console.error('Upload error:', error);
+      if (error instanceof BadRequestException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new BadRequestException(`File upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':bookId/cover')
+  @UseInterceptors(FileInterceptor('cover', {
+    storage: memoryStorage(),
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB for images
+    },
+  }))
+  async uploadCover(
+    @CurrentUser() user: JwtPayload, 
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    try {
+      if (!file) {
+        throw new BadRequestException('No cover image provided');
+      }
+
+      if (!file.buffer) {
+        throw new BadRequestException('File buffer is missing. Please ensure the image is properly uploaded.');
+      }
+
+      console.log('Uploading cover image:', {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        hasBuffer: !!file.buffer,
+      });
+
+      const uploadResult = await this.filesService.uploadImage(file, 'book_covers');
+      
+      const updatedBook = await this.booksService.updateCoverImage(
+        user.sub, 
+        user.userType as any, 
+        bookId, 
+        uploadResult.fileUrl
+      );
+
+      return {
+        success: true,
+        message: 'Cover image uploaded successfully',
+        data: {
+          book: updatedBook,
+          coverImage: {
+            url: uploadResult.fileUrl,
+            size: uploadResult.fileSize,
+            type: uploadResult.fileType,
+            originalName: file.originalname,
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Cover upload error:', error);
+      if (error instanceof BadRequestException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new BadRequestException(`Cover image upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   @UseGuards(JwtAuthGuard)

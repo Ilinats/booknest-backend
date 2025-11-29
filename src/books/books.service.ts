@@ -759,6 +759,23 @@ export class BooksService {
     return this.bookRepo.save(book);
   }
 
+  async updateCoverImage(
+    authorId: string,
+    authorUserType: string | undefined,
+    bookId: string,
+    coverImageUrl: string,
+  ) {
+    this.ensureAuthor(authorUserType);
+
+    const book = await this.findOneForAuthor(authorId, bookId);
+
+    book.coverImageUrl = coverImageUrl;
+
+    await this.bookRepo.save(book);
+
+    return this.findOnePublic(bookId);
+  }
+
   async checkUserApplicationStatus(userId: string, bookId: string): Promise<boolean> {
     const application = await this.applicationRepo.findOne({
       where: {

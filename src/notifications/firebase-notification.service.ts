@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
+import * as path from 'path';
+import * as fs from 'fs';
 
 export interface NotificationPayload {
   title: string;
@@ -24,20 +26,36 @@ export class FirebaseNotificationService {
       const serviceAccountJson = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON');
 
       if (serviceAccountPath) {
-        const serviceAccount = require(serviceAccountPath);
+        // Resolve path relative to project root
+        const resolvedPath = path.isAbsolute(serviceAccountPath)
+          ? serviceAccountPath
+          : path.resolve(process.cwd(), serviceAccountPath);
+        
+        this.logger.log(`Attempting to load Firebase service account from: ${resolvedPath}`);
+        
+        if (!fs.existsSync(resolvedPath)) {
+          this.logger.error(`Firebase service account file not found at: ${resolvedPath}`);
+          return;
+        }
+
+        const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
         this.firebaseApp = admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
         });
+        this.logger.log('Firebase initialized successfully using service account path');
       } else if (serviceAccountJson) {
         const serviceAccount = JSON.parse(serviceAccountJson);
         this.firebaseApp = admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
         });
+        this.logger.log('Firebase initialized successfully using service account JSON');
       } else {
-        this.logger.warn('Firebase not initialized: No service account configured');
+        this.logger.warn('Firebase not initialized: No service account configured. Set FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_JSON environment variable.');
       }
     } catch (error) {
       this.logger.error('Failed to initialize Firebase:', error);
+      this.logger.error('Error details:', error?.message);
+      this.logger.error('Push notifications will not be sent until Firebase is properly configured.');
     }
   }
 

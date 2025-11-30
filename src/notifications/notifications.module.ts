@@ -29,7 +29,14 @@ import { User } from '../users/entity/user.entity';
     },
   ],
   controllers: [DeviceTokenController, NotificationsController],
-  exports: [NotificationService, DeviceTokenService],
+  exports: [
+    NotificationService,
+    DeviceTokenService,
+    {
+      provide: 'NotificationService',
+      useExisting: NotificationService,
+    },
+  ],
 })
 export class NotificationsModule {}
 

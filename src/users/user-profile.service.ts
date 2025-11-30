@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserProfile, PrivacyLevel } from './entity/user-profile.entity';
@@ -12,6 +12,7 @@ export class UserProfileService {
     private readonly userProfileRepository: Repository<UserProfile>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @Inject(forwardRef(() => FriendsService))
     private readonly friendsService: FriendsService,
   ) {}
 

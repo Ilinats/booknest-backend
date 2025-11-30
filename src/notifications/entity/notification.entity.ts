@@ -15,6 +15,7 @@ import { Application } from '../../applications/entity/application.entity';
 export type NotificationType =
   | 'friend_request_received'
   | 'friend_request_accepted'
+  | 'friend_request_declined'
   | 'application_approved'
   | 'application_rejected'
   | 'review_deadline_reminder'
@@ -41,6 +42,7 @@ export class Notification {
     enum: [
       'friend_request_received',
       'friend_request_accepted',
+      'friend_request_declined',
       'application_approved',
       'application_rejected',
       'review_deadline_reminder',

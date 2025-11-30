@@ -35,6 +35,7 @@ export class NotificationService {
     const typePreferenceMap: Record<NotificationType, keyof typeof preferences> = {
       friend_request_received: 'friendRequests',
       friend_request_accepted: 'friendRequestAccepted',
+      friend_request_declined: 'friendRequestAccepted', // Use same preference as accepted
       application_approved: 'applicationApproved',
       application_rejected: 'applicationRejected',
       review_deadline_reminder: 'reviewDeadlineReminders',
@@ -63,8 +64,10 @@ export class NotificationService {
 
     try {
       const tokens = await this.deviceTokenService.getActiveTokens(userId);
+      this.logger.log(`Found ${tokens.length} active device token(s) for user ${userId}`);
+      
       if (tokens.length > 0) {
-        await this.firebaseNotificationService.sendNotificationToMultiple(tokens, {
+        const result = await this.firebaseNotificationService.sendNotificationToMultiple(tokens, {
           title,
           body,
           data: {
@@ -73,9 +76,12 @@ export class NotificationService {
             ...data,
           },
         });
+        this.logger.log(`Push notification sent: ${result.success} successful, ${result.failure} failed`);
+      } else {
+        this.logger.warn(`No active device tokens found for user ${userId}, notification saved but not sent as push`);
       }
     } catch (error) {
-      this.logger.error(`Failed to send push notification: ${error}`);
+      this.logger.error(`Failed to send push notification: ${error}`, error?.stack);
     }
 
     return savedNotification;
@@ -164,6 +170,48 @@ export class NotificationService {
       'Friend Request Accepted',
       `${accepterName} accepted your friend request`,
       { relatedUserId: accepterId },
+    );
+  }
+
+  async notifyFriendRequestDeclined(
+    requesterId: string,
+    declinerId: string,
+    declinerName: string,
+  ): Promise<Notification | null> {
+    return this.createAndSendNotification(
+      requesterId,
+      'friend_request_declined',
+      'Friend Request Declined',
+      `${declinerName} declined your friend request`,
+      { relatedUserId: declinerId },
+    );
+  }
+
+  async notifyYouAcceptedFriendRequest(
+    accepterId: string,
+    requesterId: string,
+    requesterName: string,
+  ): Promise<Notification | null> {
+    return this.createAndSendNotification(
+      accepterId,
+      'friend_request_accepted',
+      'Friend Request Accepted',
+      `You accepted ${requesterName}'s friend request`,
+      { relatedUserId: requesterId },
+    );
+  }
+
+  async notifyYouDeclinedFriendRequest(
+    declinerId: string,
+    requesterId: string,
+    requesterName: string,
+  ): Promise<Notification | null> {
+    return this.createAndSendNotification(
+      declinerId,
+      'friend_request_declined',
+      'Friend Request Declined',
+      `You declined ${requesterName}'s friend request`,
+      { relatedUserId: requesterId },
     );
   }
 

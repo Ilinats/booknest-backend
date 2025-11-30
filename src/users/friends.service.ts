@@ -61,7 +61,20 @@ export class FriendsService {
         addressee.id,
         requesterId,
         requesterName,
-      ).catch((err: any) => console.error('Failed to send friend request notification:', err));
+      )
+        .then((notification) => {
+          if (notification) {
+            console.log(`Friend request notification created for user ${addressee.id}`);
+          } else {
+            console.log(`Friend request notification skipped for user ${addressee.id} (likely due to preferences)`);
+          }
+        })
+        .catch((err: any) => {
+          console.error('Failed to send friend request notification:', err);
+          console.error('Error stack:', err?.stack);
+        });
+    } else {
+      console.warn('NotificationService not available in FriendsService');
     }
 
     return saved;
@@ -81,12 +94,45 @@ export class FriendsService {
 
     if (this.notificationService) {
       const accepter = await this.userRepository.findOne({ where: { id: userId } });
+      const requester = await this.userRepository.findOne({ where: { id: requesterId } });
       const accepterName = accepter ? `${accepter.firstName} ${accepter.lastName}` : 'Someone';
+      const requesterName = requester ? `${requester.firstName} ${requester.lastName}` : 'Someone';
+      
+      // Notify the requester that their request was accepted
       this.notificationService.notifyFriendRequestAccepted(
         requesterId,
         userId,
         accepterName,
-      ).catch((err: any) => console.error('Failed to send friend accepted notification:', err));
+      )
+        .then((notification) => {
+          if (notification) {
+            console.log(`Friend request accepted notification created for requester ${requesterId}`);
+          } else {
+            console.log(`Friend request accepted notification skipped for requester ${requesterId} (likely due to preferences)`);
+          }
+        })
+        .catch((err: any) => {
+          console.error('Failed to send friend accepted notification to requester:', err);
+          console.error('Error stack:', err?.stack);
+        });
+
+      // Notify the accepter that they accepted the request
+      this.notificationService.notifyYouAcceptedFriendRequest(
+        userId,
+        requesterId,
+        requesterName,
+      )
+        .then((notification) => {
+          if (notification) {
+            console.log(`You accepted friend request notification created for accepter ${userId}`);
+          } else {
+            console.log(`You accepted friend request notification skipped for accepter ${userId} (likely due to preferences)`);
+          }
+        })
+        .catch((err: any) => {
+          console.error('Failed to send you accepted notification to accepter:', err);
+          console.error('Error stack:', err?.stack);
+        });
     }
 
     return saved;
@@ -102,6 +148,49 @@ export class FriendsService {
     }
 
     await this.friendRepository.remove(friendRequest);
+
+    if (this.notificationService) {
+      const decliner = await this.userRepository.findOne({ where: { id: userId } });
+      const requester = await this.userRepository.findOne({ where: { id: requesterId } });
+      const declinerName = decliner ? `${decliner.firstName} ${decliner.lastName}` : 'Someone';
+      const requesterName = requester ? `${requester.firstName} ${requester.lastName}` : 'Someone';
+      
+      // Notify the requester that their request was declined
+      this.notificationService.notifyFriendRequestDeclined(
+        requesterId,
+        userId,
+        declinerName,
+      )
+        .then((notification) => {
+          if (notification) {
+            console.log(`Friend request declined notification created for requester ${requesterId}`);
+          } else {
+            console.log(`Friend request declined notification skipped for requester ${requesterId} (likely due to preferences)`);
+          }
+        })
+        .catch((err: any) => {
+          console.error('Failed to send friend declined notification to requester:', err);
+          console.error('Error stack:', err?.stack);
+        });
+
+      // Notify the decliner that they declined the request
+      this.notificationService.notifyYouDeclinedFriendRequest(
+        userId,
+        requesterId,
+        requesterName,
+      )
+        .then((notification) => {
+          if (notification) {
+            console.log(`You declined friend request notification created for decliner ${userId}`);
+          } else {
+            console.log(`You declined friend request notification skipped for decliner ${userId} (likely due to preferences)`);
+          }
+        })
+        .catch((err: any) => {
+          console.error('Failed to send you declined notification to decliner:', err);
+          console.error('Error stack:', err?.stack);
+        });
+    }
   }
 
   async unfriend(userId: string, friendId: string): Promise<void> {

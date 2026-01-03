@@ -1,17 +1,16 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
-import { User } from './user.entity';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { User } from '../../users/entity/user.entity';
 import { Book } from '../../books/entity/book.entity';
 import { Application } from '../../applications/entity/application.entity';
-
-export type ActivityType = 
-  | 'book_applied' 
-  | 'book_approved' 
-  | 'book_rejected' 
-  | 'review_posted' 
-  | 'book_started' 
-  | 'book_completed'
-  | 'book_published'
-  | 'profile_updated';
+import { ActivityType } from '../enums';
 
 @Entity({ name: 'user_activities' })
 @Index(['userId', 'createdAt'])
@@ -22,16 +21,12 @@ export class UserActivity {
   @Column({ name: 'user_id', type: 'uuid' })
   userId!: string;
 
-  @Column({ name: 'activity_type', type: 'enum', enum: [
-    'book_applied',
-    'book_approved', 
-    'book_rejected',
-    'review_posted',
-    'book_started',
-    'book_completed',
-    'book_published',
-    'profile_updated'
-  ] })
+  @Column({
+    name: 'activity_type',
+    type: 'enum',
+    enum: ActivityType,
+    default: ActivityType.BOOK_APPLIED,
+  })
   activityType!: ActivityType;
 
   @Column({ name: 'book_id', type: 'uuid', nullable: true })

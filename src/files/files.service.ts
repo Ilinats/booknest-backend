@@ -1,10 +1,18 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
-import {config} from "dotenv";
-config();
+import { FileErrorCode } from './errors';
 
 @Injectable()
 export class FilesService {
@@ -15,7 +23,9 @@ export class FilesService {
   constructor(private configService: ConfigService) {
     const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
     const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
-    const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
+    const secretAccessKey = this.configService.get<string>(
+      'AWS_SECRET_ACCESS_KEY',
+    );
 
     if (!accessKeyId || !secretAccessKey) {
       throw new Error('AWS credentials not configured');
@@ -28,29 +38,36 @@ export class FilesService {
         secretAccessKey,
       },
     });
-    
-    this.bucketName = this.configService.get<string>('AWS_S3_BUCKET_NAME') || 'booknest-files';
-    this.baseUrl = this.configService.get<string>('AWS_S3_BASE_URL') || `https://${this.bucketName}.s3.${region}.amazonaws.com`;
+
+    this.bucketName =
+      this.configService.get<string>('AWS_S3_BUCKET_NAME') || 'booknest-files';
+    this.baseUrl =
+      this.configService.get<string>('AWS_S3_BASE_URL') ||
+      `https://${this.bucketName}.s3.${region}.amazonaws.com`;
   }
 
   private validateFileType(filename: string): boolean {
-    const allowedTypes = this.configService.get<string>('ALLOWED_FILE_TYPES')?.split(',') || 
-      ['pdf', 'epub', 'mobi', 'doc', 'docx', 'txt'];
-    
+    const allowedTypes = this.configService
+      .get<string>('ALLOWED_FILE_TYPES')
+      ?.split(',') || ['pdf', 'epub'];
+
     const fileExtension = filename.split('.').pop()?.toLowerCase();
     return allowedTypes.includes(fileExtension || '');
   }
 
   private validateImageType(filename: string): boolean {
-    const allowedImageTypes = this.configService.get<string>('ALLOWED_IMAGE_TYPES')?.split(',') || 
-      ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-    
+    const allowedImageTypes = this.configService
+      .get<string>('ALLOWED_IMAGE_TYPES')
+      ?.split(',') || ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
     const fileExtension = filename.split('.').pop()?.toLowerCase();
     return allowedImageTypes.includes(fileExtension || '');
   }
 
   private validateFileSize(fileSize: number): boolean {
-    const maxSize = this.parseFileSize(this.configService.get<string>('MAX_FILE_SIZE') || '50MB');
+    const maxSize = this.parseFileSize(
+      this.configService.get<string>('MAX_FILE_SIZE') || '50MB',
+    );
     return fileSize <= maxSize;
   }
 
@@ -58,40 +75,46 @@ export class FilesService {
     const units = { B: 1, KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
     const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)$/i);
     if (!match) return 50 * 1024 * 1024; // Default 50MB
-    return parseFloat(match[1]) * units[match[2].toUpperCase() as keyof typeof units];
+    return (
+      parseFloat(match[1]) * units[match[2].toUpperCase() as keyof typeof units]
+    );
   }
 
-  async uploadFile(file: Express.Multer.File, folder: string = 'books'): Promise<{
+  async uploadFile(
+    file: Express.Multer.File,
+    folder: string = 'books',
+  ): Promise<{
     fileUrl: string;
     fileKey: string;
     fileSize: number;
     fileType: string;
   }> {
     if (!file) {
-      throw new BadRequestException('File is required');
+      throw new BadRequestException(FileErrorCode.FILE_REQUIRED);
     }
 
     if (!file.buffer) {
-      throw new BadRequestException('File buffer is missing. Please ensure the file is properly uploaded.');
+      throw new BadRequestException(FileErrorCode.FILE_BUFFER_MISSING);
     }
 
     if (!file.originalname) {
-      throw new BadRequestException('File original name is missing');
+      throw new BadRequestException(FileErrorCode.FILE_ORIGINAL_NAME_MISSING);
     }
 
     if (!this.validateFileType(file.originalname)) {
       throw new BadRequestException(
-        `File type not allowed. Allowed types: ${this.configService.get<string>('ALLOWED_FILE_TYPES') || 'pdf, epub, mobi, doc, docx, txt'}`
+        `File type not allowed. Allowed types: ${this.configService.get<string>('ALLOWED_FILE_TYPES') || 'pdf, epub, mobi, doc, docx, txt'}`,
       );
     }
 
     if (!this.validateFileSize(file.size)) {
       throw new BadRequestException(
-        `File too large. Max size: ${this.configService.get<string>('MAX_FILE_SIZE') || '50MB'}`
+        `File too large. Max size: ${this.configService.get<string>('MAX_FILE_SIZE') || '50MB'}`,
       );
     }
 
-    const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || 'unknown';
+    const fileExtension =
+      file.originalname.split('.').pop()?.toLowerCase() || 'unknown';
     const uniqueFilename = `${uuidv4()}.${fileExtension}`;
     const fileKey = `${folder}/${uniqueFilename}`;
 
@@ -117,12 +140,18 @@ export class FilesService {
       };
     } catch (error) {
       console.error('S3 upload error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new BadRequestException(`Failed to upload file to S3: ${errorMessage}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(
+        `Failed to upload file to S3: ${errorMessage}`,
+      );
     }
   }
 
-  async getFileDownloadUrl(fileKey: string, expiresIn: number = 3600): Promise<string> {
+  async getFileDownloadUrl(
+    fileKey: string,
+    expiresIn: number = 3600,
+  ): Promise<string> {
     try {
       const command = new GetObjectCommand({
         Bucket: this.bucketName,
@@ -133,7 +162,30 @@ export class FilesService {
       return await getSignedUrl(this.s3Client, command, { expiresIn });
     } catch (error) {
       console.error('S3 download URL error:', error);
-      throw new NotFoundException('File not found or access denied');
+      throw new NotFoundException(FileErrorCode.FILE_ACCESS_DENIED);
+    }
+  }
+
+  extractFileKeyFromUrl(fileUrl: string): string | null {
+    if (!fileUrl) return null;
+    
+    if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
+      return fileUrl;
+    }
+
+    try {
+      const url = new URL(fileUrl);
+      return url.pathname.substring(1);
+    } catch {
+      const baseUrlMatch = fileUrl.indexOf(this.baseUrl);
+      if (baseUrlMatch !== -1) {
+        return fileUrl.substring(this.baseUrl.length + 1);
+      }
+      const parts = fileUrl.split('/');
+      if (parts.length >= 2) {
+        return parts.slice(-2).join('/');
+      }
+      return null;
     }
   }
 
@@ -147,7 +199,25 @@ export class FilesService {
       await this.s3Client.send(command);
     } catch (error) {
       console.error('S3 delete error:', error);
-      throw new BadRequestException('Failed to delete file from S3');
+      throw new BadRequestException(FileErrorCode.FILE_DELETE_FAILED);
+    }
+  }
+
+  async deleteFileByUrl(fileUrl: string): Promise<void> {
+    if (!fileUrl) {
+      return;
+    }
+
+    const fileKey = this.extractFileKeyFromUrl(fileUrl);
+    if (!fileKey) {
+      console.warn(`Could not extract file key from URL: ${fileUrl}`);
+      return;
+    }
+
+    try {
+      await this.deleteFile(fileKey);
+    } catch (error) {
+      console.warn(`Failed to delete file from S3: ${fileKey}`, error);
     }
   }
 
@@ -167,43 +237,48 @@ export class FilesService {
       };
     } catch (error) {
       console.error('S3 metadata error:', error);
-      throw new NotFoundException('File not found');
+      throw new NotFoundException(FileErrorCode.FILE_NOT_FOUND);
     }
   }
 
-  async uploadImage(file: Express.Multer.File, folder: string = 'images'): Promise<{
+  async uploadImage(
+    file: Express.Multer.File,
+    folder: string = 'images',
+  ): Promise<{
     fileUrl: string;
     fileKey: string;
     fileSize: number;
     fileType: string;
   }> {
     if (!file) {
-      throw new BadRequestException('File is required');
+      throw new BadRequestException(FileErrorCode.FILE_REQUIRED);
     }
 
     if (!file.buffer) {
-      throw new BadRequestException('File buffer is missing. Please ensure the file is properly uploaded.');
+      throw new BadRequestException(FileErrorCode.FILE_BUFFER_MISSING);
     }
 
     if (!file.originalname) {
-      throw new BadRequestException('File original name is missing');
+      throw new BadRequestException(FileErrorCode.FILE_ORIGINAL_NAME_MISSING);
     }
 
     if (!this.validateImageType(file.originalname)) {
       throw new BadRequestException(
-        `Image type not allowed. Allowed types: ${this.configService.get<string>('ALLOWED_IMAGE_TYPES') || 'jpg, jpeg, png, gif, webp'}`
+        `Image type not allowed. Allowed types: ${this.configService.get<string>('ALLOWED_IMAGE_TYPES') || 'jpg, jpeg, png, gif, webp'}`,
       );
     }
 
-    // Validate image file size (default 10MB for images)
-    const maxImageSize = this.parseFileSize(this.configService.get<string>('MAX_IMAGE_SIZE') || '10MB');
+    const maxImageSize = this.parseFileSize(
+      this.configService.get<string>('MAX_IMAGE_SIZE') || '10MB',
+    );
     if (file.size > maxImageSize) {
       throw new BadRequestException(
-        `Image too large. Max size: ${this.configService.get<string>('MAX_IMAGE_SIZE') || '10MB'}`
+        `Image too large. Max size: ${this.configService.get<string>('MAX_IMAGE_SIZE') || '10MB'}`,
       );
     }
 
-    const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || 'unknown';
+    const fileExtension =
+      file.originalname.split('.').pop()?.toLowerCase() || 'unknown';
     const uniqueFilename = `${uuidv4()}.${fileExtension}`;
     const fileKey = `${folder}/${uniqueFilename}`;
 
@@ -229,8 +304,11 @@ export class FilesService {
       };
     } catch (error) {
       console.error('S3 image upload error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new BadRequestException(`Failed to upload image to S3: ${errorMessage}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(
+        `Failed to upload image to S3: ${errorMessage}`,
+      );
     }
   }
 }

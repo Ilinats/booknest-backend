@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { GenresService } from './genres.service';
 import { GenresController } from './genres.controller';
 import { Genre } from './entity/genre.entity';
-import { UserGenrePreference } from './entity/user-genre-preference.entity';
+import { UserGenrePreference } from '../user-genre-preferences/entity/user-genre-preference.entity';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Genre, UserGenrePreference])],
@@ -12,5 +12,3 @@ import { UserGenrePreference } from './entity/user-genre-preference.entity';
   exports: [GenresService],
 })
 export class GenresModule {}
-
-

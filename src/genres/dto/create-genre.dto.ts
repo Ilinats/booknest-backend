@@ -1,26 +1,12 @@
-import { IsBoolean, IsHexColor, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsString, MaxLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateGenreDto {
+  @ApiProperty({
+    description: 'Genre name',
+    example: 'Fantasy',
+  })
   @IsString()
   @MaxLength(100)
   name!: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsOptional()
-  @IsHexColor()
-  colorCode?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  icon?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
 }
-
-

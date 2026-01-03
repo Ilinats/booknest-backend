@@ -1,8 +1,9 @@
-import { IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class RefreshTokenDto {
+export class AuthResponseDto {
   @ApiProperty()
-  @IsString()
+  accessToken!: string;
+
+  @ApiProperty()
   refreshToken!: string;
 }

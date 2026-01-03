@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { VerificationCode, VerificationType } from './entity/verification-code.entity';
-import { User } from '../users/entity/user.entity';
-import { MailService } from '../mail/mail.service';
+import { VerificationCode } from '../entity/verification-code.entity';
+import { VerificationType } from '../enums';
+import { User } from '../../users/entity/user.entity';
+import { MailService } from '../../mail/mail.service';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -27,10 +28,13 @@ export class VerificationCodeService {
     return now;
   }
 
-  async createVerificationCode(userId: string, type: VerificationType): Promise<VerificationCode> {
+  async createVerificationCode(
+    userId: string,
+    type: VerificationType,
+  ): Promise<VerificationCode> {
     await this.verificationCodeRepo.update(
       { userId, type, isUsed: false },
-      { isUsed: true, usedAt: new Date() }
+      { isUsed: true, usedAt: new Date() },
     );
 
     const code = this.generateCode();
@@ -46,7 +50,10 @@ export class VerificationCodeService {
     return this.verificationCodeRepo.save(verificationCode);
   }
 
-  async verifyCode(code: string, type: VerificationType): Promise<{ isValid: boolean; user?: User }> {
+  async verifyCode(
+    code: string,
+    type: VerificationType,
+  ): Promise<{ isValid: boolean; user?: User }> {
     const verificationCode = await this.verificationCodeRepo.findOne({
       where: { code, type, isUsed: false },
       relations: ['user'],
@@ -68,22 +75,26 @@ export class VerificationCodeService {
   }
 
   async sendVerificationEmail(user: User, code: string): Promise<void> {
-    const webBaseUrl = this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
-    const appScheme = this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
-    const appHost = this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
+    const webBaseUrl =
+      this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
+    const appScheme =
+      this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
+    const appHost =
+      this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
     const appDeepLink = `${appScheme}${appHost}?code=${code}`;
 
     const gmailUser = this.configService.get<string>('GMAIL_USER');
     const gmailPassword = this.configService.get<string>('GMAIL_APP_PASSWORD');
-    
+
     if (!gmailUser || !gmailPassword) {
       throw new Error('Gmail credentials not configured');
     }
-    
+
     const smtpConfig = {
       host: this.configService.get<string>('SMTP_HOST') ?? 'smtp.gmail.com',
       port: Number(this.configService.get<string>('SMTP_PORT') ?? '465'),
-      secure: (this.configService.get<string>('SMTP_SECURE') ?? 'true') === 'true',
+      secure:
+        (this.configService.get<string>('SMTP_SECURE') ?? 'true') === 'true',
       user: gmailUser,
       pass: gmailPassword,
       fromEmail: gmailUser,
@@ -97,29 +108,40 @@ export class VerificationCodeService {
       secure: smtpConfig.secure,
       user: smtpConfig.user,
       to: user.email,
-      code: code
+      code: code,
     });
-    
-    await this.mailService.sendVerificationEmail(smtpConfig, user.email, verifyUrl, appDeepLink, code);
+
+    await this.mailService.sendVerificationEmail(
+      smtpConfig,
+      user.email,
+      verifyUrl,
+      appDeepLink,
+      code,
+    );
   }
 
   async sendPasswordResetEmail(user: User, code: string): Promise<void> {
-    const webBaseUrl = this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
-    const appScheme = this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
-    const appHost = this.configService.get<string>('APP_DEEP_LINK_HOST') || '://reset-password';
+    const webBaseUrl =
+      this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
+    const appScheme =
+      this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
+    const appHost =
+      this.configService.get<string>('APP_DEEP_LINK_HOST') ||
+      '://reset-password';
     const appDeepLink = `${appScheme}${appHost}?code=${code}`;
 
     const gmailUser = this.configService.get<string>('GMAIL_USER');
     const gmailPassword = this.configService.get<string>('GMAIL_APP_PASSWORD');
-    
+
     if (!gmailUser || !gmailPassword) {
       throw new Error('Gmail credentials not configured');
     }
-    
+
     const smtpConfig = {
       host: this.configService.get<string>('SMTP_HOST') ?? 'smtp.gmail.com',
       port: Number(this.configService.get<string>('SMTP_PORT') ?? '465'),
-      secure: (this.configService.get<string>('SMTP_SECURE') ?? 'true') === 'true',
+      secure:
+        (this.configService.get<string>('SMTP_SECURE') ?? 'true') === 'true',
       user: gmailUser,
       pass: gmailPassword,
       fromEmail: gmailUser,
@@ -127,7 +149,13 @@ export class VerificationCodeService {
 
     const resetUrl = `${webBaseUrl}/reset-password?code=${code}`;
 
-    await this.mailService.sendPasswordResetEmail(smtpConfig, user.email, resetUrl, appDeepLink, code);
+    await this.mailService.sendPasswordResetEmail(
+      smtpConfig,
+      user.email,
+      resetUrl,
+      appDeepLink,
+      code,
+    );
   }
 
   async cleanupExpiredCodes(): Promise<void> {

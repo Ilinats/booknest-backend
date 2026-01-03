@@ -1,7 +1,14 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { User } from '../../users/entity/user.entity';
-
-export type VerificationType = 'email_verification' | 'password_reset';
+import { VerificationType } from '../enums';
 
 @Entity({ name: 'verification_codes' })
 export class VerificationCode {
@@ -20,7 +27,11 @@ export class VerificationCode {
   @Column({ name: 'code', type: 'varchar', length: 6 })
   code!: string;
 
-  @Column({ name: 'type', type: 'enum', enum: ['email_verification', 'password_reset'] })
+  @Column({
+    name: 'type',
+    type: 'enum',
+    enum: ['email_verification', 'password_reset'],
+  })
   type!: VerificationType;
 
   @Column({ name: 'is_used', type: 'boolean', default: false })

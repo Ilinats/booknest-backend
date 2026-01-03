@@ -1,4 +1,12 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { User } from '../../users/entity/user.entity';
 
 @Entity({ name: 'auth_refresh_tokens' })
@@ -14,7 +22,6 @@ export class RefreshToken {
   @Column({ name: 'user_id', type: 'uuid' })
   userId!: string;
 
-  // SHA-256 на токена; позволява директно търсене без пълен скан
   @Index({ unique: true })
   @Column({ name: 'token_hash', type: 'varchar', length: 64 })
   tokenHash!: string;
@@ -43,4 +50,4 @@ export class RefreshToken {
 
   @Column({ name: 'device_name', type: 'varchar', length: 200, nullable: true })
   deviceName?: string | null;
-} 
+}

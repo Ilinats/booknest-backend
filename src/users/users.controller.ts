@@ -1,98 +1,183 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Delete,
+  Query,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { UpdateProfileDto } from './dto/update-profile.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CurrentUser, JwtPayload } from '../auth/current-user.decorator';
+import { UpdateProfileDto, FindUsersDto, UploadAvatarDto } from './dto';
+import {
+  UserResponseDto,
+  UserPublicResponseDto,
+  UserListResponseDto,
+} from './dto';
+import { JwtAuthGuard } from '../auth/guards';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../auth/decorators/current-user.decorator';
+import { UserType } from './enums';
 
+@ApiTags('Users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Post()
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
-  }
-
   @UseGuards(JwtAuthGuard)
   @Get('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiResponse({
+    status: 200,
+    description: 'Current user profile',
+    type: UserResponseDto,
+  })
   async me(@CurrentUser() payload: JwtPayload) {
-    return this.usersService.findOneById(payload.sub);
+    return this.usersService.findOneByIdResponse(payload.sub, true);
   }
 
   @UseGuards(JwtAuthGuard)
   @Patch('me')
-  async updateMe(@CurrentUser('sub') userId: string, @Body() dto: UpdateUserDto) {
-    const allowed: UpdateUserDto = {
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      avatarUrl: dto.avatarUrl,
-      bio: dto.bio,
-    };
-    return this.usersService.update(userId, allowed);
-  }
-
-  @Get('profile/:id')
-  async getProfile(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.usersService.getProfile(id);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Patch('profile/me')
-  async updateProfile(@CurrentUser('sub') userId: string, @Body() dto: UpdateProfileDto) {
+  @ApiBearerAuth()
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: false,
+    }),
+  )
+  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiResponse({
+    status: 200,
+    description: 'User updated successfully',
+    type: UserResponseDto,
+  })
+  async updateMe(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: UpdateProfileDto,
+  ) {
     return this.usersService.updateProfile(userId, dto);
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get('profile/:id/stats')
-  async getAuthorStats(
-    @CurrentUser() user: JwtPayload,
-    @Param('id', new ParseUUIDPipe()) authorId: string
+  @Post('me/avatar')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Upload avatar image for current user' })
+  @ApiResponse({ status: 200, description: 'Avatar uploaded successfully' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UploadAvatarDto })
+  @UseInterceptors(
+    FileInterceptor('avatar', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+    }),
+  )
+  async uploadAvatar(
+    @CurrentUser('sub') userId: string,
+    @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.usersService.getAuthorStats(authorId, user.sub, user.userType);
+    return this.usersService.uploadAvatar(userId, file);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me/avatar')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Remove avatar image for current user' })
+  @ApiResponse({ status: 200, description: 'Avatar removed successfully' })
+  async removeAvatar(@CurrentUser('sub') userId: string) {
+    return this.usersService.removeAvatar(userId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('me/stats')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user statistics' })
+  @ApiResponse({ status: 200, description: 'User statistics' })
   async getMyStats(@CurrentUser('sub') userId: string) {
     return this.usersService.getMyStats(userId);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/stats')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get author statistics (Author access required)' })
+  @ApiResponse({ status: 200, description: 'Author statistics' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  async getAuthorStats(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', new ParseUUIDPipe()) authorId: string,
+  ) {
+    return this.usersService.getAuthorStats(authorId, user.sub, user.userType);
+  }
+
   @Get()
-  findAll(@Query('search') search?: string, @Query('skip') skip?: string, @Query('take') take?: string) {
-    const parsedSkip = skip ? parseInt(skip, 10) : undefined;
-    const parsedTake = take ? parseInt(take, 10) : undefined;
-    return this.usersService.findAll({ search, skip: parsedSkip, take: parsedTake });
+  @ApiOperation({ summary: 'List all users with pagination and search' })
+  @ApiQuery({ type: () => FindUsersDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of users',
+    type: UserListResponseDto,
+  })
+  async findAll(@Query() dto: FindUsersDto) {
+    return this.usersService.findAll({
+      search: dto.search,
+      skip: dto.skip,
+      take: dto.take,
+      isActive: dto.isActive,
+    });
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('search')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Search users (authenticated)' })
+  @ApiQuery({ type: () => FindUsersDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated search results',
+    type: UserListResponseDto,
+  })
   async searchUsers(
     @CurrentUser('sub') userId: string,
-    @Query('q') query: string,
-    @Query('limit') limit?: string
+    @Query() dto: FindUsersDto,
   ) {
-    const parsedLimit = limit ? parseInt(limit, 10) : 20;
-    return this.usersService.findAll({ 
-      search: query, 
-      skip: 0, 
-      take: Math.min(parsedLimit, 50) 
-    });
+    const limit = dto.take ?? 20;
+    const search = dto.search ?? '';
+    return this.usersService.searchUsers(search, Math.min(limit, 50));
   }
 
   @Get(':id')
-  findOne(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.usersService.findOneById(id);
+  @ApiOperation({ summary: 'Get user by ID (public profile, no email)' })
+  @ApiResponse({
+    status: 200,
+    description: 'User found',
+    type: UserPublicResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async findOne(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.usersService.findOneByIdResponse(id, false);
   }
-
-  @Patch(':id')
-  update(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.usersService.remove(id);
-  }
-} 
+}

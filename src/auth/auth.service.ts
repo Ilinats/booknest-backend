@@ -1,11 +1,19 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  RefreshTokenDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto';
 import { MailService } from '../mail/mail.service';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -14,10 +22,21 @@ import { Repository } from 'typeorm';
 import { User } from '../users/entity/user.entity';
 import * as argon2 from 'argon2';
 import { RefreshToken } from './entity/refresh-token.entity';
-import { UserAddressService } from '../users/user-address.service';
-import { VerificationCodeService } from './verification-code.service';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { UserAddressService } from '../user-address/user-address.service';
+import { VerificationCodeService } from './services/verification-code.service';
+import { VerifyEmailDto, RequestPasswordResetDto } from './dto';
+import { sanitizeUser } from '../common/utils/user-sanitizer.util';
+import {
+  AuthResponseDto,
+  LoginResponseDto,
+  RefreshTokenResponseDto,
+  LogoutResponseDto,
+  VerificationStatusResponseDto,
+  MessageResponseDto,
+} from './dto';
+import { UserResponseDto } from '../users/dto';
+import { AuthErrorCode, AuthErrors } from './errors/auth-errors';
+import { UserType } from '../users/enums';
 
 @Injectable()
 export class AuthService {
@@ -37,15 +56,16 @@ export class AuthService {
   private smtpConfig() {
     const gmailUser = this.configService.get<string>('GMAIL_USER');
     const gmailPassword = this.configService.get<string>('GMAIL_APP_PASSWORD');
-    
+
     if (!gmailUser || !gmailPassword) {
       throw new Error('Gmail credentials not configured');
     }
-    
+
     return {
       host: this.configService.get<string>('SMTP_HOST') ?? 'smtp.gmail.com',
       port: Number(this.configService.get<string>('SMTP_PORT') ?? '465'),
-      secure: (this.configService.get<string>('SMTP_SECURE') ?? 'true') === 'true',
+      secure:
+        (this.configService.get<string>('SMTP_SECURE') ?? 'true') === 'true',
       user: gmailUser,
       pass: gmailPassword,
       fromEmail: this.configService.get<string>('FROM_EMAIL') ?? gmailUser,
@@ -53,29 +73,32 @@ export class AuthService {
     };
   }
 
-  async register(dto: RegisterDto) {
-    console.log('Registration attempt for:', { email: dto.email, username: dto.username });
-    
-    const existingUser = await this.usersRepository.findOne({ 
-      where: [
-        { email: dto.email.toLowerCase() },
-        { username: dto.username }
-      ]
+  async register(dto: RegisterDto): Promise<AuthResponseDto> {
+    console.log('Registration attempt for:', {
+      email: dto.email,
+      username: dto.username,
     });
-    
+
+    const existingUser = await this.usersRepository.findOne({
+      where: [{ email: dto.email.toLowerCase() }, { username: dto.username }],
+    });
+
     if (existingUser) {
-      console.log('User already exists:', { 
-        id: existingUser.id, 
-        email: existingUser.email, 
+      console.log('User already exists:', {
+        id: existingUser.id,
+        email: existingUser.email,
         username: existingUser.username,
         existingEmail: existingUser.email === dto.email.toLowerCase(),
-        existingUsername: existingUser.username === dto.username
+        existingUsername: existingUser.username === dto.username,
       });
-      throw new ConflictException({ message: 'User already exists', code: 'USER_EXISTS' });
+      const error = AuthErrors[AuthErrorCode.USER_ALREADY_EXISTS];
+      throw new ConflictException({ message: error.message, code: error.code });
     }
 
-    const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
-    
+    const passwordHash = await argon2.hash(dto.password, {
+      type: argon2.argon2id,
+    });
+
     const user: User = this.usersRepository.create({
       username: dto.username,
       email: dto.email.toLowerCase(),
@@ -92,14 +115,18 @@ export class AuthService {
     let savedUser: User;
     try {
       savedUser = await this.usersRepository.save(user);
-      console.log('User saved successfully:', { id: savedUser.id, email: savedUser.email, username: savedUser.username });
+      console.log('User saved successfully:', {
+        id: savedUser.id,
+        email: savedUser.email,
+        username: savedUser.username,
+      });
     } catch (error) {
       console.error('Failed to save user:', error);
-      console.error('User data that failed to save:', { 
-        email: user.email, 
+      console.error('User data that failed to save:', {
+        email: user.email,
         username: user.username,
         firstName: user.firstName,
-        lastName: user.lastName
+        lastName: user.lastName,
       });
       throw error;
     }
@@ -108,33 +135,63 @@ export class AuthService {
       await this.userAddressService.create(savedUser.id, dto.address);
     }
 
-    const verificationCode = await this.verificationCodeService.createVerificationCode(
-      savedUser.id, 
-      'email_verification'
-    );
+    const verificationCode =
+      await this.verificationCodeService.createVerificationCode(
+        savedUser.id,
+        'email_verification',
+      );
 
     try {
-      await this.verificationCodeService.sendVerificationEmail(savedUser, verificationCode.code);
+      await this.verificationCodeService.sendVerificationEmail(
+        savedUser,
+        verificationCode.code,
+      );
       console.log(`Verification email sent successfully to ${savedUser.email}`);
     } catch (error) {
       console.error('Failed to send verification email:', error.message);
     }
 
-    const { accessToken, refreshToken } = await this.issueTokensStateful(savedUser.id, savedUser.username || savedUser.email, savedUser.email, savedUser.userType, undefined, undefined);
-    return { user: savedUser, accessToken, refreshToken };
+    const { accessToken, refreshToken } = await this.issueTokensStateful(
+      savedUser.id,
+      savedUser.username || savedUser.email,
+      savedUser.email,
+      savedUser.userType,
+      undefined,
+      undefined,
+    );
+    return { accessToken, refreshToken };
   }
 
-  async login(dto: LoginDto, meta?: { ip?: string; userAgent?: string; deviceName?: string }) {
+  async login(
+    dto: LoginDto,
+    meta?: { ip?: string; userAgent?: string; deviceName?: string },
+  ): Promise<LoginResponseDto> {
     const user = await this.verifyPassword(dto.identifier, dto.password);
-    if (!user) throw new UnauthorizedException({ message: 'Invalid credentials', code: 'INVALID_CREDENTIALS' });
+    if (!user) {
+      const error = AuthErrors[AuthErrorCode.INVALID_CREDENTIALS];
+      throw new UnauthorizedException({
+        message: error.message,
+        code: error.code,
+      });
+    }
     await this.updateLastLogin(user.id);
-    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username || user.email, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName);
-    return { user, accessToken, refreshToken };
+    const { accessToken, refreshToken } = await this.issueTokensStateful(
+      user.id,
+      user.username || user.email,
+      user.email,
+      user.userType,
+      meta?.ip,
+      meta?.userAgent,
+      meta?.deviceName,
+    );
+    return { accessToken, refreshToken };
   }
 
-  async logout(refreshToken: string) {
+  async logout(refreshToken: string): Promise<LogoutResponseDto> {
     const hash = this.hashToken(refreshToken);
-    const token = await this.refreshTokenRepository.findOne({ where: { tokenHash: hash } });
+    const token = await this.refreshTokenRepository.findOne({
+      where: { tokenHash: hash },
+    });
     if (token && !token.revokedAt) {
       token.revokedAt = new Date();
       await this.refreshTokenRepository.save(token);
@@ -142,45 +199,85 @@ export class AuthService {
     return { message: 'Logged out' };
   }
 
-  async logoutAll(userId: string) {
-    await this.refreshTokenRepository.update({ userId }, { revokedAt: new Date() });
+  async logoutAll(userId: string): Promise<LogoutResponseDto> {
+    await this.refreshTokenRepository.update(
+      { userId },
+      { revokedAt: new Date() },
+    );
     return { message: 'Logged out from all devices' };
   }
 
-  async refresh(dto: RefreshTokenDto, meta?: { ip?: string; userAgent?: string; deviceName?: string }) {
+  async refresh(
+    dto: RefreshTokenDto,
+    meta?: { ip?: string; userAgent?: string; deviceName?: string },
+  ): Promise<RefreshTokenResponseDto> {
     const hash = this.hashToken(dto.refreshToken);
-    const token = await this.refreshTokenRepository.findOne({ where: { tokenHash: hash } });
+    const token = await this.refreshTokenRepository.findOne({
+      where: { tokenHash: hash },
+    });
     if (!token || token.revokedAt || token.expiresAt.getTime() < Date.now()) {
-      throw new UnauthorizedException({ message: 'Invalid refresh token', code: 'INVALID_REFRESH_TOKEN' });
+      const error = AuthErrors[AuthErrorCode.INVALID_REFRESH_TOKEN];
+      throw new UnauthorizedException({
+        message: error.message,
+        code: error.code,
+      });
     }
 
-    // Проверка за reuse: ако е бил заместен, считаме опит за повторна употреба
     if (token.replacedByTokenId) {
-      // Отменяме цялото семейство токени
-      await this.refreshTokenRepository.update({ familyId: token.familyId }, { revokedAt: new Date() });
-      throw new UnauthorizedException({ message: 'Refresh token reuse detected', code: 'REFRESH_TOKEN_REUSE' });
+      await this.refreshTokenRepository.update(
+        { familyId: token.familyId },
+        { revokedAt: new Date() },
+      );
+      const error = AuthErrors[AuthErrorCode.REFRESH_TOKEN_REUSE];
+      throw new UnauthorizedException({
+        message: error.message,
+        code: error.code,
+      });
     }
 
-    const user = await this.usersRepository.findOne({ where: { id: token.userId } });
-    if (!user) throw new UnauthorizedException({ message: 'Invalid refresh token', code: 'INVALID_REFRESH_TOKEN' });
+    const user = await this.usersRepository.findOne({
+      where: { id: token.userId },
+    });
+    if (!user) {
+      const error = AuthErrors[AuthErrorCode.INVALID_REFRESH_TOKEN];
+      throw new UnauthorizedException({
+        message: error.message,
+        code: error.code,
+      });
+    }
 
-    const { accessToken, refreshToken } = await this.issueTokensStateful(user.id, user.username || user.email, user.email, user.userType, meta?.ip, meta?.userAgent, meta?.deviceName, token.familyId, token.id);
+    const { accessToken, refreshToken } = await this.issueTokensStateful(
+      user.id,
+      user.username || user.email,
+      user.email,
+      user.userType,
+      meta?.ip,
+      meta?.userAgent,
+      meta?.deviceName,
+      token.familyId,
+      token.id,
+    );
 
     return { accessToken, refreshToken };
   }
 
-  async forgotPassword(dto: ForgotPasswordDto) {
+  async forgotPassword(dto: ForgotPasswordDto): Promise<MessageResponseDto> {
     const user = await this.usersService.findByEmail(dto.email);
     if (user) {
       const token = crypto.randomBytes(32).toString('hex');
       const expires = new Date(Date.now() + 1000 * 60 * 60);
       await this.setPasswordResetToken(user.id, token, expires);
 
-      const baseUrl = this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
+      const baseUrl =
+        this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
       const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
 
       try {
-        await this.mailService.sendPasswordResetEmail(this.smtpConfig(), user.email, resetUrl);
+        await this.mailService.sendPasswordResetEmail(
+          this.smtpConfig(),
+          user.email,
+          resetUrl,
+        );
       } catch (error) {
         console.warn('Failed to send password reset email:', error.message);
       }
@@ -188,36 +285,43 @@ export class AuthService {
     return { message: 'If that email exists, a reset link has been sent.' };
   }
 
-
-  async verifyEmail(token: string) {
+  async verifyEmail(token: string): Promise<{ user: UserResponseDto }> {
     const user = await this.verifyEmailByToken(token);
-    return { user };
+    const sanitizedUser = sanitizeUser(user);
+    return { user: sanitizedUser };
   }
 
-  async getVerificationStatus(userId: string) {
+  async getVerificationStatus(
+    userId: string,
+  ): Promise<VerificationStatusResponseDto> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new BadRequestException('User not found');
+      const error = AuthErrors[AuthErrorCode.USER_NOT_FOUND];
+      throw new NotFoundException({ message: error.message, code: error.code });
     }
 
     return {
       userId: user.id,
       email: user.email,
       emailVerified: user.emailVerified,
-      isActive: user.isActive
+      isActive: user.isActive,
     };
   }
 
-  async googleAuth(googleUser: any, userType?: 'reader' | 'author') {
+  async googleAuth(googleUser: any, userType?: UserType) {
     const { googleId, email, firstName, lastName, avatarUrl } = googleUser;
 
-    console.log('Google Auth - Input:', { googleId, email, firstName, lastName, avatarUrl, userType });
+    console.log('Google Auth - Input:', {
+      googleId,
+      email,
+      firstName,
+      lastName,
+      avatarUrl,
+      userType,
+    });
 
     let user = await this.usersRepository.findOne({
-      where: [
-        { googleId },
-        { email: email.toLowerCase() }
-      ]
+      where: [{ googleId }, { email: email.toLowerCase() }],
     });
 
     console.log('Google Auth - Found existing user:', user ? user.id : 'none');
@@ -229,18 +333,19 @@ export class AuthService {
         console.log('Google Auth - Updated existing user with Google ID');
       }
     } else {
+      const finalUserType = userType || UserType.READER;
       const username = await this.generateUniqueUsername(email);
       console.log('Google Auth - Generated username:', username);
-      
+
       user = this.usersRepository.create({
         googleId,
         email: email.toLowerCase(),
         username,
         firstName,
         lastName,
-        userType: userType || 'reader',
+        userType: finalUserType,
         avatarUrl: avatarUrl || null,
-        emailVerified: true, 
+        emailVerified: true,
         isActive: true,
       });
 
@@ -257,19 +362,21 @@ export class AuthService {
       user.id,
       user.username || user.email,
       user.email,
-      user.userType
+      user.userType,
     );
 
     console.log('Google Auth - Successfully completed for user:', user.id);
-    return { 
-      user, 
-      accessToken, 
-      refreshToken 
+    return {
+      accessToken,
+      refreshToken,
     };
   }
 
   private async generateUniqueUsername(email: string): Promise<string> {
-    const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+    const baseUsername = email
+      .split('@')[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
     let username = baseUsername;
     let counter = 1;
 
@@ -281,21 +388,30 @@ export class AuthService {
     return username;
   }
 
-  async resendVerification(email: string) {
+  async resendVerification(email: string): Promise<MessageResponseDto> {
     const user = await this.usersService.findByEmail(email);
-    if (!user) return { message: 'If that email exists, a verification was sent.' };
+    if (!user)
+      return { message: 'If that email exists, a verification was sent.' };
     const token = crypto.randomBytes(32).toString('hex');
     await this.setEmailVerificationToken(user.id, token);
 
-    const webBaseUrl = this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
+    const webBaseUrl =
+      this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
     const verifyUrl = `${webBaseUrl}/verify-email?token=${encodeURIComponent(token)}`;
-    
-    const appScheme = this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
-    const appHost = this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
+
+    const appScheme =
+      this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
+    const appHost =
+      this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
     const appDeepLink = `${appScheme}${appHost}?token=${encodeURIComponent(token)}`;
 
     try {
-      await this.mailService.sendVerificationEmail(this.smtpConfig(), user.email, verifyUrl, appDeepLink);
+      await this.mailService.sendVerificationEmail(
+        this.smtpConfig(),
+        user.email,
+        verifyUrl,
+        appDeepLink,
+      );
     } catch (error) {
       console.error('Failed to send verification email:', error.message);
       console.error('SMTP Config:', {
@@ -303,19 +419,33 @@ export class AuthService {
         port: this.smtpConfig().port,
         secure: this.smtpConfig().secure,
         user: this.smtpConfig().user,
-        fromEmail: this.smtpConfig().fromEmail
+        fromEmail: this.smtpConfig().fromEmail,
       });
     }
 
     return { message: 'If that email exists, a verification was sent.' };
   }
 
-  private async issueTokensStateful(userId: string, username: string, email: string, userType: 'reader' | 'author', ip?: string, userAgent?: string, deviceName?: string, familyId?: string, replacedTokenId?: string) {
+  private async issueTokensStateful(
+    userId: string,
+    username: string,
+    email: string,
+    userType: UserType,
+    ip?: string,
+    userAgent?: string,
+    deviceName?: string,
+    familyId?: string,
+    replacedTokenId?: string,
+  ) {
     const payload = { sub: userId, username, email, userType };
     const accessToken = await this.jwtService.signAsync(payload);
 
-    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') ?? (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') + '_refresh';
-    const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+    const refreshSecret =
+      this.configService.get<string>('JWT_REFRESH_SECRET') ??
+      (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') +
+        '_refresh';
+    const refreshExpiresIn =
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
 
     const rawRefreshToken = crypto.randomBytes(64).toString('hex');
     const tokenHash = this.hashToken(rawRefreshToken);
@@ -340,7 +470,10 @@ export class AuthService {
     const saved = await this.refreshTokenRepository.save(entity);
 
     if (replacedTokenId) {
-      await this.refreshTokenRepository.update({ id: replacedTokenId }, { replacedByTokenId: saved.id });
+      await this.refreshTokenRepository.update(
+        { id: replacedTokenId },
+        { replacedByTokenId: saved.id },
+      );
     }
 
     return { accessToken, refreshToken: rawRefreshToken };
@@ -369,20 +502,37 @@ export class AuthService {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  private async issueTokens(userId: string, username: string, email: string, userType: 'reader' | 'author') {
+  private async issueTokens(
+    userId: string,
+    username: string,
+    email: string,
+    userType: 'reader' | 'author',
+  ) {
     const payload = { sub: userId, username, email, userType };
     const accessToken = await this.jwtService.signAsync(payload);
-    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') ?? (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') + '_refresh';
-    const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
-    const refreshToken = await this.jwtService.signAsync(payload, { secret: refreshSecret, expiresIn: refreshExpiresIn });
+    const refreshSecret =
+      this.configService.get<string>('JWT_REFRESH_SECRET') ??
+      (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') +
+        '_refresh';
+    const refreshExpiresIn =
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+    const refreshToken = await this.jwtService.signAsync(payload, {
+      secret: refreshSecret,
+      expiresIn: refreshExpiresIn,
+    });
     return { accessToken, refreshToken };
   }
 
-  private async verifyPassword(emailOrUsername: string, password: string): Promise<User | null> {
+  private async verifyPassword(
+    emailOrUsername: string,
+    password: string,
+  ): Promise<User | null> {
     const user = await this.usersRepository
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
-      .where('user.email = :identifier OR user.username = :identifier', { identifier: emailOrUsername.toLowerCase() })
+      .where('user.email = :identifier OR user.username = :identifier', {
+        identifier: emailOrUsername.toLowerCase(),
+      })
       .getOne();
 
     if (!user || !user.passwordHash) {
@@ -393,23 +543,47 @@ export class AuthService {
     return ok ? user : null;
   }
 
-  private async setEmailVerificationToken(userId: string, token: string): Promise<void> {
-    await this.usersRepository.update({ id: userId }, { emailVerificationToken: token });
+  private async setEmailVerificationToken(
+    userId: string,
+    token: string,
+  ): Promise<void> {
+    await this.usersRepository.update(
+      { id: userId },
+      { emailVerificationToken: token },
+    );
   }
 
   private async verifyEmailByToken(token: string): Promise<User> {
-    const user = await this.usersRepository.findOne({ where: { emailVerificationToken: token } });
-    if (!user) throw new BadRequestException({ message: 'Invalid token', code: 'INVALID_TOKEN' });
+    const user = await this.usersRepository.findOne({
+      where: { emailVerificationToken: token },
+    });
+    if (!user) {
+      const error = AuthErrors[AuthErrorCode.INVALID_VERIFICATION_CODE];
+      throw new BadRequestException({
+        message: error.message,
+        code: error.code,
+      });
+    }
     user.emailVerified = true;
     user.emailVerificationToken = null;
     return this.usersRepository.save(user);
   }
 
-  private async setPasswordResetToken(userId: string, token: string, expiresAt: Date): Promise<void> {
-    await this.usersRepository.update({ id: userId }, { passwordResetToken: token, passwordResetExpires: expiresAt });
+  private async setPasswordResetToken(
+    userId: string,
+    token: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    await this.usersRepository.update(
+      { id: userId },
+      { passwordResetToken: token, passwordResetExpires: expiresAt },
+    );
   }
 
-  private async resetPasswordByToken(token: string, newPassword: string): Promise<void> {
+  private async resetPasswordByToken(
+    token: string,
+    newPassword: string,
+  ): Promise<void> {
     const user = await this.usersRepository
       .createQueryBuilder('user')
       .addSelect('user.passwordResetToken')
@@ -417,105 +591,160 @@ export class AuthService {
       .where('user.passwordResetToken = :token', { token })
       .getOne();
 
-    if (!user || !user.passwordResetExpires || user.passwordResetExpires.getTime() < Date.now()) {
-      throw new BadRequestException({ message: 'Invalid or expired token', code: 'INVALID_OR_EXPIRED_TOKEN' });
+    if (
+      !user ||
+      !user.passwordResetExpires ||
+      user.passwordResetExpires.getTime() < Date.now()
+    ) {
+      const error = AuthErrors[AuthErrorCode.PASSWORD_RESET_TOKEN_EXPIRED];
+      throw new BadRequestException({
+        message: error.message,
+        code: error.code,
+      });
     }
 
-    const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id });
-
-    await this.usersRepository.update({ id: user.id }, {
-      passwordHash,
-      passwordResetToken: null,
-      passwordResetExpires: null,
+    const passwordHash = await argon2.hash(newPassword, {
+      type: argon2.argon2id,
     });
+
+    await this.usersRepository.update(
+      { id: user.id },
+      {
+        passwordHash,
+        passwordResetToken: null,
+        passwordResetExpires: null,
+      },
+    );
   }
 
-  private async updateLastLogin(userId: string, at: Date = new Date()): Promise<void> {
+  private async updateLastLogin(
+    userId: string,
+    at: Date = new Date(),
+  ): Promise<void> {
     await this.usersRepository.update({ id: userId }, { lastLogin: at });
   }
 
-  async verifyEmailWithCode(dto: VerifyEmailDto) {
-    const result = await this.verificationCodeService.verifyCode(dto.code, 'email_verification');
-    
+  async verifyEmailWithCode(
+    dto: VerifyEmailDto,
+  ): Promise<{ message: string; user: UserResponseDto }> {
+    const result = await this.verificationCodeService.verifyCode(
+      dto.code,
+      'email_verification',
+    );
+
     if (!result.isValid || !result.user) {
-      throw new UnauthorizedException('Invalid or expired verification code');
+      const error = AuthErrors[AuthErrorCode.INVALID_VERIFICATION_CODE];
+      throw new UnauthorizedException({
+        message: 'Invalid or expired verification code',
+        code: error.code,
+      });
     }
 
-    await this.usersRepository.update({ id: result.user.id }, { emailVerified: true });
+    await this.usersRepository.update(
+      { id: result.user.id },
+      { emailVerified: true },
+    );
 
+    const sanitizedUser = sanitizeUser(result.user);
     return {
-      success: true,
       message: 'Email verified successfully',
-      user: result.user
+      user: sanitizedUser,
     };
   }
 
-  async requestPasswordReset(dto: RequestPasswordResetDto) {
-    const user = await this.usersRepository.findOne({ where: { email: dto.email } });
-    
+  async requestPasswordReset(
+    dto: RequestPasswordResetDto,
+  ): Promise<{ message: string }> {
+    const user = await this.usersRepository.findOne({
+      where: { email: dto.email },
+    });
+
     if (!user) {
       return {
-        success: true,
-        message: 'If an account with that email exists, a password reset code has been sent'
+        message:
+          'If an account with that email exists, a password reset code has been sent',
       };
     }
 
-    const verificationCode = await this.verificationCodeService.createVerificationCode(
-      user.id, 
-      'password_reset'
+    const verificationCode =
+      await this.verificationCodeService.createVerificationCode(
+        user.id,
+        'password_reset',
+      );
+
+    await this.verificationCodeService.sendPasswordResetEmail(
+      user,
+      verificationCode.code,
     );
 
-    await this.verificationCodeService.sendPasswordResetEmail(user, verificationCode.code);
-
     return {
-      success: true,
-      message: 'If an account with that email exists, a password reset code has been sent'
+      message:
+        'If an account with that email exists, a password reset code has been sent',
     };
   }
 
-  async resetPasswordWithCode(dto: ResetPasswordDto) {
-    const result = await this.verificationCodeService.verifyCode(dto.code, 'password_reset');
-    
+  async resetPasswordWithCode(
+    dto: ResetPasswordDto,
+  ): Promise<{ message: string }> {
+    const result = await this.verificationCodeService.verifyCode(
+      dto.code,
+      'password_reset',
+    );
+
     if (!result.isValid || !result.user) {
-      throw new UnauthorizedException('Invalid or expired reset code');
+      const error = AuthErrors[AuthErrorCode.INVALID_VERIFICATION_CODE];
+      throw new UnauthorizedException({
+        message: 'Invalid or expired reset code',
+        code: error.code,
+      });
     }
 
-    const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
+    const passwordHash = await argon2.hash(dto.newPassword, {
+      type: argon2.argon2id,
+    });
 
     await this.usersRepository.update({ id: result.user.id }, { passwordHash });
 
     return {
-      success: true,
-      message: 'Password reset successfully'
+      message: 'Password reset successfully',
     };
   }
 
-  async resendVerificationCode(email: string) {
+  async resendVerificationCode(email: string): Promise<{ message: string }> {
     console.log('Resend verification code for:', email);
-    
+
     const user = await this.usersRepository.findOne({ where: { email } });
-    
+
     if (!user) {
       console.log('User not found for email:', email);
-      throw new NotFoundException('User not found');
+      const error = AuthErrors[AuthErrorCode.USER_NOT_FOUND];
+      throw new NotFoundException({ message: error.message, code: error.code });
     }
 
     if (user.emailVerified) {
       console.log('Email already verified for:', email);
-      throw new BadRequestException('Email is already verified');
+      const error = AuthErrors[AuthErrorCode.EMAIL_NOT_VERIFIED];
+      throw new BadRequestException({
+        message: 'Email is already verified',
+        code: 'EMAIL_ALREADY_VERIFIED',
+      });
     }
 
     console.log('Creating verification code for user:', user.id);
-    
-    const verificationCode = await this.verificationCodeService.createVerificationCode(
-      user.id, 
-      'email_verification'
-    );
+
+    const verificationCode =
+      await this.verificationCodeService.createVerificationCode(
+        user.id,
+        'email_verification',
+      );
 
     console.log('Verification code created:', verificationCode.code);
 
     try {
-      await this.verificationCodeService.sendVerificationEmail(user, verificationCode.code);
+      await this.verificationCodeService.sendVerificationEmail(
+        user,
+        verificationCode.code,
+      );
       console.log('Verification email sent successfully to:', email);
     } catch (error) {
       console.error('Failed to send verification email:', error);
@@ -523,8 +752,49 @@ export class AuthService {
     }
 
     return {
-      success: true,
-      message: 'Verification code sent successfully'
+      message: 'Verification code sent successfully',
     };
   }
-} 
+
+  async checkUsernameAvailability(username: string): Promise<{
+    available: boolean;
+    message: string;
+  }> {
+    const existingUser = await this.usersRepository.findOne({
+      where: { username },
+    });
+
+    if (existingUser) {
+      return {
+        available: false,
+        message: 'Username is already taken',
+      };
+    }
+
+    return {
+      available: true,
+      message: 'Username is available',
+    };
+  }
+
+  async checkEmailAvailability(email: string): Promise<{
+    available: boolean;
+    message: string;
+  }> {
+    const existingUser = await this.usersRepository.findOne({
+      where: { email: email.toLowerCase() },
+    });
+
+    if (existingUser) {
+      return {
+        available: false,
+        message: 'Email is already registered',
+      };
+    }
+
+    return {
+      available: true,
+      message: 'Email is available',
+    };
+  }
+}

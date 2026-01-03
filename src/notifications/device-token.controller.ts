@@ -2,7 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -10,31 +10,61 @@ import {
   Request,
   UsePipes,
   ValidationPipe,
+  Query,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DeviceTokenService } from './device-token.service';
-import { RegisterDeviceTokenDto, UpdateDeviceTokenDto } from './dto/device-token.dto';
-import { getUserId } from '../common/get-user-id.util';
+import { RegisterDeviceTokenDto, UpdateDeviceTokenDto } from './dto';
+import { getUserId, BasePaginationDto } from '../common';
 
+@ApiTags('Device Tokens')
 @Controller('device-tokens')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class DeviceTokenController {
   constructor(private readonly deviceTokenService: DeviceTokenService) {}
 
   @Post('register')
+  @ApiOperation({ summary: 'Register a device token (Authenticated)' })
+  @ApiResponse({
+    status: 201,
+    description: 'Device token registered successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async registerToken(@Request() req: any, @Body() dto: RegisterDeviceTokenDto) {
+  async registerToken(
+    @Request() req: any,
+    @Body() dto: RegisterDeviceTokenDto,
+  ) {
     const userId = getUserId(req);
     return this.deviceTokenService.registerToken(userId, dto);
   }
 
   @Get()
-  async getMyTokens(@Request() req: any) {
+  @ApiOperation({
+    summary: 'Get all device tokens for current user (Authenticated)',
+  })
+  @ApiResponse({ status: 200, description: 'List of device tokens' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async getMyTokens(@Request() req: any, @Query() dto: BasePaginationDto) {
     const userId = getUserId(req);
-    return this.deviceTokenService.getAllUserTokens(userId);
+    return this.deviceTokenService.getAllUserTokens(userId, dto);
   }
 
-  @Put(':token')
+  @Patch(':token')
+  @ApiOperation({ summary: 'Update a device token (Authenticated)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Device token updated successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async updateToken(
     @Request() req: any,
@@ -46,10 +76,15 @@ export class DeviceTokenController {
   }
 
   @Delete(':token')
+  @ApiOperation({ summary: 'Delete a device token (Authenticated)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Device token deleted successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async deleteToken(@Request() req: any, @Param('token') token: string) {
     const userId = getUserId(req);
     await this.deviceTokenService.deleteToken(userId, token);
-    return { success: true, message: 'Device token deleted' };
+    return { message: 'Device token deleted' };
   }
 }
-

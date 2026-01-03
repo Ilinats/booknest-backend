@@ -11,15 +11,7 @@ import {
 import { User } from '../../users/entity/user.entity';
 import { Book } from '../../books/entity/book.entity';
 import { Application } from '../../applications/entity/application.entity';
-
-export type NotificationType =
-  | 'friend_request_received'
-  | 'friend_request_accepted'
-  | 'friend_request_declined'
-  | 'application_approved'
-  | 'application_rejected'
-  | 'review_deadline_reminder'
-  | 'author_book_published';
+import { NotificationTypeEnum } from '../enums';
 
 @Entity({ name: 'notifications' })
 @Index(['userId', 'isRead'])
@@ -39,18 +31,10 @@ export class Notification {
   @Column({
     name: 'type',
     type: 'enum',
-    enum: [
-      'friend_request_received',
-      'friend_request_accepted',
-      'friend_request_declined',
-      'application_approved',
-      'application_rejected',
-      'review_deadline_reminder',
-      'author_book_published',
-    ],
+    enum: NotificationTypeEnum,
     nullable: false,
   })
-  type!: NotificationType;
+  type!: NotificationTypeEnum;
 
   @Column({ name: 'title', type: 'varchar', length: 255, nullable: false })
   title!: string;
@@ -101,4 +85,3 @@ export class Notification {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp with time zone' })
   updatedAt!: Date;
 }
-

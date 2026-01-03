@@ -22,40 +22,57 @@ export class FirebaseNotificationService {
 
   private initializeFirebase() {
     try {
-      const serviceAccountPath = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT_PATH');
-      const serviceAccountJson = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON');
+      const serviceAccountPath = this.configService.get<string>(
+        'FIREBASE_SERVICE_ACCOUNT_PATH',
+      );
+      const serviceAccountJson = this.configService.get<string>(
+        'FIREBASE_SERVICE_ACCOUNT_JSON',
+      );
 
       if (serviceAccountPath) {
-        // Resolve path relative to project root
         const resolvedPath = path.isAbsolute(serviceAccountPath)
           ? serviceAccountPath
           : path.resolve(process.cwd(), serviceAccountPath);
-        
-        this.logger.log(`Attempting to load Firebase service account from: ${resolvedPath}`);
-        
+
+        this.logger.log(
+          `Attempting to load Firebase service account from: ${resolvedPath}`,
+        );
+
         if (!fs.existsSync(resolvedPath)) {
-          this.logger.error(`Firebase service account file not found at: ${resolvedPath}`);
+          this.logger.error(
+            `Firebase service account file not found at: ${resolvedPath}`,
+          );
           return;
         }
 
-        const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+        const serviceAccount = JSON.parse(
+          fs.readFileSync(resolvedPath, 'utf8'),
+        );
         this.firebaseApp = admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
         });
-        this.logger.log('Firebase initialized successfully using service account path');
+        this.logger.log(
+          'Firebase initialized successfully using service account path',
+        );
       } else if (serviceAccountJson) {
         const serviceAccount = JSON.parse(serviceAccountJson);
         this.firebaseApp = admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
         });
-        this.logger.log('Firebase initialized successfully using service account JSON');
+        this.logger.log(
+          'Firebase initialized successfully using service account JSON',
+        );
       } else {
-        this.logger.warn('Firebase not initialized: No service account configured. Set FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_JSON environment variable.');
+        this.logger.warn(
+          'Firebase not initialized: No service account configured. Set FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_SERVICE_ACCOUNT_JSON environment variable.',
+        );
       }
     } catch (error) {
       this.logger.error('Failed to initialize Firebase:', error);
       this.logger.error('Error details:', error?.message);
-      this.logger.error('Push notifications will not be sent until Firebase is properly configured.');
+      this.logger.error(
+        'Push notifications will not be sent until Firebase is properly configured.',
+      );
     }
   }
 
@@ -105,14 +122,19 @@ export class FirebaseNotificationService {
       this.logger.log(`Successfully sent notification: ${response}`);
       return true;
     } catch (error: any) {
-      this.logger.error(`Error sending notification: ${error.message}`, error.stack);
-      
-      if (error.code === 'messaging/invalid-registration-token' || 
-          error.code === 'messaging/registration-token-not-registered') {
+      this.logger.error(
+        `Error sending notification: ${error.message}`,
+        error.stack,
+      );
+
+      if (
+        error.code === 'messaging/invalid-registration-token' ||
+        error.code === 'messaging/registration-token-not-registered'
+      ) {
         this.logger.warn(`Invalid token, should be removed: ${token}`);
         return false;
       }
-      
+
       return false;
     }
   }
@@ -164,7 +186,7 @@ export class FirebaseNotificationService {
       };
 
       const response = await admin.messaging().sendEachForMulticast(message);
-      
+
       this.logger.log(
         `Successfully sent ${response.successCount} notifications, ${response.failureCount} failed`,
       );
@@ -174,7 +196,10 @@ export class FirebaseNotificationService {
         failure: response.failureCount,
       };
     } catch (error: any) {
-      this.logger.error(`Error sending multicast notification: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error sending multicast notification: ${error.message}`,
+        error.stack,
+      );
       return { success: 0, failure: tokens.length };
     }
   }
@@ -210,9 +235,11 @@ export class FirebaseNotificationService {
       this.logger.log(`Successfully sent topic notification: ${response}`);
       return true;
     } catch (error: any) {
-      this.logger.error(`Error sending topic notification: ${error.message}`, error.stack);
+      this.logger.error(
+        `Error sending topic notification: ${error.message}`,
+        error.stack,
+      );
       return false;
     }
   }
 }
-

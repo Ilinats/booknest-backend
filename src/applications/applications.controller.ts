@@ -1,139 +1,421 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Patch,
+  Put,
+  Query,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { ApplicationsService } from './applications.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CurrentUser, JwtPayload } from '../auth/current-user.decorator';
-import { CreateApplicationDto } from './dto/create-application.dto';
-import { UpdateApplicationDto } from './dto/update-application.dto';
-import { ApplicationStatusDto } from './dto/application-status.dto';
-import { ApproveRejectApplicationDto } from './dto/approve-reject-application.dto';
-import { BulkActionDto } from './dto/bulk-action.dto';
-import { UpdateReadingStatusDto } from './dto/update-reading-status.dto';
+import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { Roles } from '../auth/decorators';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../auth/decorators/current-user.decorator';
+import { UserType } from '../users/enums';
+import {
+  CreateApplicationDto,
+  BulkActionDto,
+  ShippingApplicationDto,
+  BulkMarkSentDto,
+  UpdateApplicationCompleteDto,
+  FindApplicationsDto,
+  FindBookApplicationsDto,
+  UpdateReadingStatusDto,
+} from './dto';
+import { Application } from './entity';
 
+@ApiTags('Applications')
 @Controller('applications')
 export class ApplicationsController {
   constructor(private readonly applicationsService: ApplicationsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.READER)
   @Post()
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Create a new application for a book (Reader only)',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Application created successfully',
+    type: Application,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request - email verification required or address required',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Forbidden - reader access required, book not active or no copies available',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict - application already exists',
+  })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  create(@CurrentUser('sub') readerId: string, @Body() dto: CreateApplicationDto) {
+  create(
+    @CurrentUser('sub') readerId: string,
+    @Body() dto: CreateApplicationDto,
+  ) {
     return this.applicationsService.create(readerId, dto);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Post('books/:bookId/bulk-mark-sent')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Bulk mark copies as sent (Author only)' })
+  @ApiResponse({ status: 200, description: 'Copies marked as sent' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  bulkMarkCopySent(
+    @CurrentUser() user: JwtPayload,
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
+    @Body() dto: BulkMarkSentDto,
+  ) {
+    return this.applicationsService.bulkMarkCopySent(
+      bookId,
+      user.sub,
+      user.userType,
+      dto,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Post('books/:bookId/bulk-action')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Perform bulk action on applications (Author only)',
+  })
+  @ApiResponse({ status: 200, description: 'Bulk action completed' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  bulkAction(
+    @CurrentUser() user: JwtPayload,
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
+    @Body() dto: BulkActionDto,
+  ) {
+    return this.applicationsService.bulkUpdateApplicationStatus(
+      bookId,
+      user.sub,
+      user.userType,
+      dto,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Post('books/:bookId/run-lottery')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Run lottery selection for a book (Author only)',
+    description:
+      'Randomly selects applications after deadline. Can only be run once per book.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lottery completed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        approved: { type: 'number' },
+        rejected: { type: 'number' },
+        message: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - deadline not passed or lottery already run',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  runLotterySelection(
+    @CurrentUser() user: JwtPayload,
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
+  ) {
+    return this.applicationsService.runLotterySelection(bookId, user.sub);
+  }
   @UseGuards(JwtAuthGuard)
   @Get('my')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "Get current user's applications with advanced filters (Authenticated)",
+  })
+  @ApiQuery({ type: () => FindApplicationsDto })
+  @ApiResponse({ status: 200, description: 'Paginated list of applications' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   findMy(
     @CurrentUser('sub') readerId: string,
-    @Query('status') status?: string
+    @Query() dto: FindApplicationsDto,
   ) {
-    return this.applicationsService.findMyApplications(readerId, status);
+    return this.applicationsService.findMyApplications(readerId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Get('overdue-reviews')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get overdue reviews (Author only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of applications with overdue reviews',
+    type: [Application],
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  getOverdueReviews(@CurrentUser() user: JwtPayload) {
+    return this.applicationsService.getOverdueReviews(user.sub);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('check/:bookId')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Check if user has applied for a book (Authenticated)',
+  })
+  @ApiResponse({ status: 200, description: 'Application check result' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   checkApplication(
     @CurrentUser('sub') readerId: string,
-    @Param('bookId', new ParseUUIDPipe()) bookId: string
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
   ) {
     return this.applicationsService.checkApplication(readerId, bookId);
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Get(':applicationId')
-  findOne(@CurrentUser() user: JwtPayload, @Param('applicationId', new ParseUUIDPipe()) applicationId: string) {
-    return this.applicationsService.findOne(applicationId, user.sub, user.userType);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Put(':applicationId')
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  update(
-    @CurrentUser('sub') readerId: string,
-    @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
-    @Body() dto: UpdateApplicationDto
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Get('books/:bookId/shipping')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Get shipping information for approved applications (Author only, physical/both books only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of approved applications with addresses',
+    type: ShippingApplicationDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  getShippingInfo(
+    @CurrentUser() user: JwtPayload,
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
   ) {
-    return this.applicationsService.update(applicationId, readerId, dto);
+    return this.applicationsService.getShippingInfo(
+      bookId,
+      user.sub,
+      user.userType,
+    );
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Delete(':applicationId')
-  withdraw(
-    @CurrentUser('sub') readerId: string,
-    @Param('applicationId', new ParseUUIDPipe()) applicationId: string
-  ) {
-    return this.applicationsService.withdraw(applicationId, readerId);
-  }
-
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
   @Get('books/:bookId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all applications for a book (Author only)' })
+  @ApiQuery({ type: () => FindBookApplicationsDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of applications for the book',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   getBookApplications(
     @CurrentUser() user: JwtPayload,
-    @Param('bookId', new ParseUUIDPipe()) bookId: string
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
+    @Query() dto: FindBookApplicationsDto,
   ) {
-    return this.applicationsService.getBookApplications(bookId, user.sub, user.userType);
+    return this.applicationsService.getBookApplications(
+      bookId,
+      user.sub,
+      user.userType,
+      dto,
+    );
   }
-
   @UseGuards(JwtAuthGuard)
-  @Put(':applicationId/approve')
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  approve(
+  @Get(':applicationId')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get application by ID (Authenticated - reader or author access)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Application details',
+    type: Application,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  findOne(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
-    @Body() dto: ApproveRejectApplicationDto
   ) {
-    return this.applicationsService.updateApplicationStatus(applicationId, user.sub, user.userType, { ...dto, status: 'approved' });
+    return this.applicationsService.findOne(
+      applicationId,
+      user.sub,
+      user.userType,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
-  @Put(':applicationId/reject')
+  @Patch(':applicationId')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Update application - supports updating message, status (author), reading status (reader), and marking sent/received (Authenticated)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Application updated successfully',
+    type: Application,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - insufficient permissions or invalid state',
+  })
+  @ApiResponse({ status: 404, description: 'Application not found' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  reject(
+  update(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
-    @Body() dto: ApproveRejectApplicationDto
+    @Body() dto: UpdateApplicationCompleteDto,
   ) {
-    return this.applicationsService.updateApplicationStatus(applicationId, user.sub, user.userType, { ...dto, status: 'rejected' });
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('bulk-action')
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  bulkAction(@CurrentUser() user: JwtPayload, @Body() dto: BulkActionDto) {
-    return this.applicationsService.bulkAction(user.sub, user.userType, dto);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Put(':applicationId/mark-sent')
-  markCopySent(
-    @CurrentUser() user: JwtPayload,
-    @Param('applicationId', new ParseUUIDPipe()) applicationId: string
-  ) {
-    return this.applicationsService.markCopySent(applicationId, user.sub, user.userType);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Put(':applicationId/mark-received')
-  markCopyReceived(
-    @CurrentUser('sub') readerId: string,
-    @Param('applicationId', new ParseUUIDPipe()) applicationId: string
-  ) {
-    return this.applicationsService.markCopyReceived(applicationId, readerId);
+    return this.applicationsService.update(
+      applicationId,
+      user.sub,
+      user.userType,
+      dto,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
   @Put(':applicationId/reading-status')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Update reading status (Authenticated - Reader only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reading status updated successfully',
+    type: Application,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - application not approved',
+  })
+  @ApiResponse({ status: 404, description: 'Application not found' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   updateReadingStatus(
     @CurrentUser('sub') readerId: string,
     @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
-    @Body() dto: UpdateReadingStatusDto
+    @Body() dto: UpdateReadingStatusDto,
   ) {
-    return this.applicationsService.updateReadingStatus(applicationId, readerId, dto);
+    return this.applicationsService.updateReadingStatus(
+      applicationId,
+      readerId,
+      dto,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Put(':applicationId/mark-sent')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Mark copy as sent (Author only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Copy marked as sent successfully',
+    type: Application,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Forbidden - Author access required or application not approved',
+  })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  markCopySent(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
+  ) {
+    return this.applicationsService.markCopySent(
+      applicationId,
+      user.sub,
+      user.userType,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get('my/reading-progress')
-  getMyReadingProgress(@CurrentUser('sub') readerId: string) {
-    return this.applicationsService.getMyReadingProgress(readerId);
+  @Delete(':applicationId')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Withdraw application (Authenticated - pending applications only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Application withdrawn successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - can only withdraw pending applications',
+  })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  withdraw(
+    @CurrentUser('sub') readerId: string,
+    @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
+  ) {
+    return this.applicationsService.withdrawApplication(
+      applicationId,
+      readerId,
+    );
   }
 }

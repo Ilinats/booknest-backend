@@ -1,7 +1,14 @@
-import { Column, CreateDateColumn, Entity, Index, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { UserAddress } from './user-address.entity';
-
-export type UserType = 'reader' | 'author';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { UserAddress } from '../../user-address/entity/user-address.entity';
+import { UserType } from '../enums';
 
 @Entity({ name: 'users' })
 export class User {
@@ -16,7 +23,13 @@ export class User {
   @Column({ type: 'varchar', length: 255, nullable: false })
   email!: string;
 
-  @Column({ name: 'password_hash', type: 'varchar', length: 255, nullable: true, select: false })
+  @Column({
+    name: 'password_hash',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    select: false,
+  })
   passwordHash?: string | null;
 
   @Index({ unique: true })
@@ -29,7 +42,12 @@ export class User {
   @Column({ name: 'last_name', type: 'varchar', length: 100, nullable: false })
   lastName!: string;
 
-  @Column({ name: 'user_type', type: 'enum', enum: ['reader', 'author'], nullable: false })
+  @Column({
+    name: 'user_type',
+    type: 'enum',
+    enum: ['reader', 'author'],
+    nullable: false,
+  })
   userType!: UserType;
 
   @Column({ name: 'birth_date', type: 'date', nullable: true })
@@ -47,10 +65,22 @@ export class User {
   @Column({ name: 'email_verified', type: 'boolean', default: false })
   emailVerified!: boolean;
 
-  @Column({ name: 'email_verification_token', type: 'varchar', length: 255, nullable: true, select: false })
+  @Column({
+    name: 'email_verification_token',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    select: false,
+  })
   emailVerificationToken?: string | null;
 
-  @Column({ name: 'password_reset_token', type: 'varchar', length: 255, nullable: true, select: false })
+  @Column({
+    name: 'password_reset_token',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    select: false,
+  })
   passwordResetToken?: string | null;
 
   @Column({ name: 'password_reset_expires', type: 'timestamp', nullable: true })
@@ -70,4 +100,4 @@ export class User {
 
   @OneToMany(() => UserAddress, (address) => address.user)
   addresses?: UserAddress[];
-} 
+}

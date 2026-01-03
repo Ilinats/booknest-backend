@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DeviceToken } from './entity/device-token.entity';
-import { RegisterDeviceTokenDto, UpdateDeviceTokenDto } from './dto/device-token.dto';
+import { RegisterDeviceTokenDto, UpdateDeviceTokenDto } from './dto';
+import { BasePaginationDto, createPaginatedResponse } from '../common';
 
 @Injectable()
 export class DeviceTokenService {
@@ -11,7 +12,10 @@ export class DeviceTokenService {
     private readonly deviceTokenRepository: Repository<DeviceToken>,
   ) {}
 
-  async registerToken(userId: string, dto: RegisterDeviceTokenDto): Promise<DeviceToken> {
+  async registerToken(
+    userId: string,
+    dto: RegisterDeviceTokenDto,
+  ): Promise<DeviceToken> {
     let deviceToken = await this.deviceTokenRepository.findOne({
       where: { userId, token: dto.token },
     });
@@ -43,11 +47,18 @@ export class DeviceTokenService {
     return tokens.map((t) => t.token);
   }
 
-  async getAllUserTokens(userId: string): Promise<DeviceToken[]> {
-    return this.deviceTokenRepository.find({
+  async getAllUserTokens(userId: string, dto: BasePaginationDto) {
+    const skip = dto.skip ?? 0;
+    const take = dto.take ?? 20;
+
+    const [tokens, total] = await this.deviceTokenRepository.findAndCount({
       where: { userId },
       order: { updatedAt: 'DESC' },
+      skip,
+      take,
     });
+
+    return createPaginatedResponse(tokens, total, skip, take);
   }
 
   async deactivateToken(userId: string, token: string): Promise<void> {
@@ -85,4 +96,3 @@ export class DeviceTokenService {
     return this.deviceTokenRepository.save(deviceToken);
   }
 }
-

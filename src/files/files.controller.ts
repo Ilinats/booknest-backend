@@ -1,97 +1,105 @@
-import { 
-  Controller, 
-  Post, 
-  Get, 
-  Delete, 
-  Param, 
-  UseInterceptors, 
-  UploadedFile, 
-  BadRequestException,
+import {
+  Controller,
+  Post,
+  Get,
+  Delete,
+  Param,
+  UseInterceptors,
+  UploadedFile,
   UseGuards,
-  Request,
-  Res
+  Res,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { FilesService } from './files.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../users/entity/user.entity';
 
+@ApiTags('Files')
 @Controller('files')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Post('upload')
+  @ApiOperation({ summary: 'Upload a file (Authenticated)' })
+  @ApiResponse({ status: 200, description: 'File uploaded successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: User,
   ) {
-    if (!file) {
-      throw new BadRequestException('No file provided');
-    }
-
     const result = await this.filesService.uploadFile(file, 'books');
-    
+
     return {
-      success: true,
-      message: 'File uploaded successfully',
-      data: {
-        fileUrl: result.fileUrl,
-        fileKey: result.fileKey,
-        fileSize: result.fileSize,
-        fileType: result.fileType,
-        originalName: file.originalname,
-      },
+      fileUrl: result.fileUrl,
+      fileKey: result.fileKey,
+      fileSize: result.fileSize,
+      fileType: result.fileType,
+      originalName: file.originalname,
     };
   }
 
   @Get('download/:fileKey')
+  @ApiOperation({ summary: 'Get download URL for a file (Authenticated)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Download URL generated successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getDownloadUrl(
     @Param('fileKey') fileKey: string,
     @CurrentUser() user: User,
   ) {
     const downloadUrl = await this.filesService.getFileDownloadUrl(fileKey);
-    
+
     return {
-      success: true,
-      message: 'Download URL generated successfully',
-      data: {
-        downloadUrl,
-        expiresIn: 3600, // 1 hour
-      },
+      downloadUrl,
+      expiresIn: 3600,
     };
   }
 
   @Delete(':fileKey')
+  @ApiOperation({ summary: 'Delete a file (Authenticated)' })
+  @ApiResponse({ status: 200, description: 'File deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async deleteFile(
     @Param('fileKey') fileKey: string,
     @CurrentUser() user: User,
   ) {
     await this.filesService.deleteFile(fileKey);
-    
-    return {
-      success: true,
-      message: 'File deleted successfully',
-    };
+
+    return { message: 'File deleted successfully' };
   }
 
   @Get('metadata/:fileKey')
+  @ApiOperation({ summary: 'Get file metadata (Authenticated)' })
+  @ApiResponse({
+    status: 200,
+    description: 'File metadata retrieved successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getFileMetadata(
     @Param('fileKey') fileKey: string,
     @CurrentUser() user: User,
   ) {
     const metadata = await this.filesService.getFileMetadata(fileKey);
-    
-    return {
-      success: true,
-      message: 'File metadata retrieved successfully',
-      data: metadata,
-    };
+
+    return metadata;
   }
 
   @Get('download/:fileKey')
+  @ApiOperation({ summary: 'Download a file directly (Authenticated)' })
+  @ApiResponse({ status: 302, description: 'Redirects to file download URL' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async downloadFile(
     @Param('fileKey') fileKey: string,
     @CurrentUser() user: User,

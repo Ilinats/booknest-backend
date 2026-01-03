@@ -1,13 +1,24 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToMany, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToMany,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { User } from '../../users/entity/user.entity';
-import { Genre } from '../../genres/entity/genre.entity';
-import { Series } from './series.entity';
+import { Series } from '../../series/entity/series.entity';
 import { BookGenre } from './book-genre.entity';
-
-export type AgeRating = 'all' | '13+' | '16+' | '18+';
-export type DistributionType = 'physical' | 'digital' | 'both';
-export type SelectionMethod = 'author_selects' | 'first_come' | 'lottery';
-export type BookStatus = 'draft' | 'active' | 'in_progress' | 'completed' | 'archived';
+import {
+  AgeRating,
+  DistributionType,
+  SelectionMethod,
+  BookStatus,
+} from '../enums';
 
 @Entity({ name: 'books' })
 export class Book {
@@ -25,22 +36,37 @@ export class Book {
   @Column({ type: 'varchar', length: 255, nullable: false })
   title!: string;
 
-  @Column({ name: 'short_description', type: 'varchar', length: 500, nullable: true })
+  @Column({
+    name: 'short_description',
+    type: 'varchar',
+    length: 500,
+    nullable: true,
+  })
   shortDescription?: string | null;
 
   @Column({ name: 'full_description', type: 'text', nullable: true })
   fullDescription?: string | null;
 
-  @Column({ name: 'cover_image_url', type: 'varchar', length: 500, nullable: true })
+  @Column({
+    name: 'cover_image_url',
+    type: 'varchar',
+    length: 500,
+    nullable: true,
+  })
   coverImageUrl?: string | null;
 
   @Column({ name: 'page_count', type: 'int', nullable: true })
   pageCount?: number | null;
 
-  @Column({ name: 'age_rating', type: 'enum', enum: ['all', '13+', '16+', '18+'], default: 'all' })
+  @Column({
+    name: 'age_rating',
+    type: 'enum',
+    enum: AgeRating,
+    default: AgeRating.ALL,
+  })
   ageRating!: AgeRating;
 
-  @Column({ name: 'distribution_type', type: 'enum', enum: ['physical', 'digital', 'both'] })
+  @Column({ name: 'distribution_type', type: 'enum', enum: DistributionType })
   distributionType!: DistributionType;
 
   @Column({ name: 'file_url', type: 'varchar', length: 500, nullable: true })
@@ -61,16 +87,26 @@ export class Book {
   @Column({ name: 'application_deadline', type: 'timestamp' })
   applicationDeadline!: Date;
 
-  @Column({ name: 'review_deadline_days', type: 'int', default: 30 })
-  reviewDeadlineDays!: number;
+  @Column({ name: 'review_deadline', type: 'timestamp', nullable: true })
+  reviewDeadline?: Date | null;
 
   @Column({ name: 'selection_criteria', type: 'text', nullable: true })
   selectionCriteria?: string | null;
 
-  @Column({ name: 'selection_method', type: 'enum', enum: ['author_selects', 'first_come', 'lottery'], default: 'author_selects' })
+  @Column({
+    name: 'selection_method',
+    type: 'enum',
+    enum: SelectionMethod,
+    default: SelectionMethod.AUTHOR_SELECTS,
+  })
   selectionMethod!: SelectionMethod;
 
-  @Column({ name: 'status', type: 'enum', enum: ['draft', 'active', 'in_progress', 'completed', 'archived'], default: 'draft' })
+  @Column({
+    name: 'status',
+    type: 'enum',
+    enum: BookStatus,
+    default: BookStatus.DRAFT,
+  })
   status!: BookStatus;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
@@ -82,7 +118,10 @@ export class Book {
   @Column({ name: 'published_at', type: 'timestamp', nullable: true })
   publishedAt?: Date | null;
 
-  @ManyToOne(() => Series, (series) => series.books, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => Series, (series) => series.books, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
   @JoinColumn({ name: 'series_id' })
   series?: Series | null;
 
@@ -95,5 +134,3 @@ export class Book {
   @OneToMany(() => BookGenre, (bg) => bg.book)
   bookGenres?: BookGenre[];
 }
-
-

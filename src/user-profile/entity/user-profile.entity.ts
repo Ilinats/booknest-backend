@@ -1,7 +1,14 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { User } from './user.entity';
-
-export type PrivacyLevel = 'public' | 'friends' | 'private';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  OneToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { User } from '../../users/entity/user.entity';
+import { PrivacyLevel } from '../enums';
 
 @Entity({ name: 'user_profiles' })
 export class UserProfile {
@@ -23,16 +30,36 @@ export class UserProfile {
     }>;
   } | null;
 
-  @Column({ name: 'activity_privacy', type: 'enum', enum: ['public', 'friends', 'private'], default: 'friends' })
+  @Column({
+    name: 'activity_privacy',
+    type: 'enum',
+    enum: PrivacyLevel,
+    default: PrivacyLevel.PUBLIC,
+  })
   activityPrivacy!: PrivacyLevel;
 
-  @Column({ name: 'profile_privacy', type: 'enum', enum: ['public', 'friends', 'private'], default: 'friends' })
+  @Column({
+    name: 'profile_privacy',
+    type: 'enum',
+    enum: PrivacyLevel,
+    default: PrivacyLevel.PUBLIC,
+  })
   profilePrivacy!: PrivacyLevel;
 
-  @Column({ name: 'reading_list_privacy', type: 'enum', enum: ['public', 'friends', 'private'], default: 'friends' })
+  @Column({
+    name: 'reading_list_privacy',
+    type: 'enum',
+    enum: PrivacyLevel,
+    default: PrivacyLevel.FRIENDS,
+  })
   readingListPrivacy!: PrivacyLevel;
 
-  @Column({ name: 'reviews_privacy', type: 'enum', enum: ['public', 'friends', 'private'], default: 'public' })
+  @Column({
+    name: 'reviews_privacy',
+    type: 'enum',
+    enum: PrivacyLevel,
+    default: PrivacyLevel.PUBLIC,
+  })
   reviewsPrivacy!: PrivacyLevel;
 
   @Column({ name: 'notifications_enabled', type: 'boolean', default: true })

@@ -428,6 +428,11 @@ export class ApplicationsService {
           code: error.code,
         });
       }
+      if (application.book.selectionMethod === SelectionMethod.LOTTERY) {
+        throw new BadRequestException(
+          'Cannot manually approve or reject applications for books with lottery selection. Please use the run-lottery endpoint after the application deadline.',
+        );
+      }
       application.status = dto.status;
       application.authorNotes = dto.authorNotes ?? application.authorNotes;
       application.respondedAt = new Date();
@@ -627,12 +632,20 @@ export class ApplicationsService {
     if (needsPhysicalAddress && readerIds.length > 0) {
       const addresses = await this.userAddressRepo.find({
         where: { userId: In(readerIds) },
+        order: { isPrimary: 'DESC', createdAt: 'ASC' },
       });
 
       addresses.forEach((addr) => {
         const existing = readerAddressesMap.get(addr.userId) || [];
         existing.push(addr);
         readerAddressesMap.set(addr.userId, existing);
+      });
+
+      applications.forEach((app) => {
+        if (app.reader) {
+          const readerAddresses = readerAddressesMap.get(app.readerId) || [];
+          (app.reader as any).addresses = readerAddresses;
+        }
       });
     }
 
@@ -769,6 +782,12 @@ export class ApplicationsService {
         message: error.message,
         code: error.code,
       });
+    }
+
+    if (book.selectionMethod === SelectionMethod.LOTTERY) {
+      throw new BadRequestException(
+        'Cannot manually approve or reject applications for books with lottery selection. Please use the run-lottery endpoint after the application deadline.',
+      );
     }
 
     if (!dto || !dto.applicationIds || dto.applicationIds.length === 0) {

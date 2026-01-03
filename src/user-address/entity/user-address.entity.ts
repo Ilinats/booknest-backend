@@ -1,5 +1,14 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { User } from './user.entity';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { User } from '../../users/entity/user.entity';
 
 @Entity({ name: 'user_addresses' })
 export class UserAddress {
@@ -14,7 +23,12 @@ export class UserAddress {
   @Column({ name: 'user_id', type: 'uuid' })
   userId!: string;
 
-  @Column({ name: 'street_address', type: 'varchar', length: 255, nullable: false })
+  @Column({
+    name: 'street_address',
+    type: 'varchar',
+    length: 255,
+    nullable: false,
+  })
   streetAddress!: string;
 
   @Column({ type: 'varchar', length: 100, nullable: false })
@@ -23,7 +37,12 @@ export class UserAddress {
   @Column({ name: 'postal_code', type: 'varchar', length: 20, nullable: false })
   postalCode!: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: false, default: 'Bulgaria' })
+  @Column({
+    type: 'varchar',
+    length: 100,
+    nullable: false,
+    default: 'Bulgaria',
+  })
   country!: string;
 
   @Column({ name: 'is_primary', type: 'boolean', default: true })

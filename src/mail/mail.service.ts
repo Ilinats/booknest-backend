@@ -22,12 +22,19 @@ export class MailService {
     });
   }
 
-
-  async sendVerificationEmail(cfg: SmtpConfig, to: string, verifyUrl: string, appDeepLinkUrl?: string, code?: string): Promise<void> {
+  async sendVerificationEmail(
+    cfg: SmtpConfig,
+    to: string,
+    verifyUrl: string,
+    appDeepLinkUrl?: string,
+    code?: string,
+  ): Promise<void> {
     try {
       const transporter = this.createTransport(cfg);
-      const from = cfg.fromName ? `${cfg.fromName} <${cfg.fromEmail}>` : cfg.fromEmail;
-      
+      const from = cfg.fromName
+        ? `${cfg.fromName} <${cfg.fromEmail}>`
+        : cfg.fromEmail;
+
       if (code) {
         await transporter.sendMail({
           from,
@@ -55,8 +62,10 @@ export class MailService {
       } else {
         const primaryUrl = appDeepLinkUrl || verifyUrl;
         const htmlButton = `<a href="${primaryUrl}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px">Verify Email</a>`;
-        const altLink = appDeepLinkUrl ? `<p>If the button doesn't open the app, <a href="${verifyUrl}">tap here</a> instead.</p>` : '';
-        
+        const altLink = appDeepLinkUrl
+          ? `<p>If the button doesn't open the app, <a href="${verifyUrl}">tap here</a> instead.</p>`
+          : '';
+
         await transporter.sendMail({
           from,
           to,
@@ -67,15 +76,25 @@ export class MailService {
       }
     } catch (err) {
       console.error('Email sending error details:', err);
-      throw new InternalServerErrorException(`Failed to send email: ${err.message}`);
+      throw new InternalServerErrorException(
+        `Failed to send email: ${err.message}`,
+      );
     }
   }
 
-  async sendPasswordResetEmail(cfg: SmtpConfig, to: string, resetUrl: string, appDeepLinkUrl?: string, code?: string): Promise<void> {
+  async sendPasswordResetEmail(
+    cfg: SmtpConfig,
+    to: string,
+    resetUrl: string,
+    appDeepLinkUrl?: string,
+    code?: string,
+  ): Promise<void> {
     try {
       const transporter = this.createTransport(cfg);
-      const from = cfg.fromName ? `${cfg.fromName} <${cfg.fromEmail}>` : cfg.fromEmail;
-      
+      const from = cfg.fromName
+        ? `${cfg.fromName} <${cfg.fromEmail}>`
+        : cfg.fromEmail;
+
       if (code) {
         await transporter.sendMail({
           from,
@@ -104,8 +123,10 @@ export class MailService {
       } else {
         const primaryUrl = appDeepLinkUrl || resetUrl;
         const htmlButton = `<a href="${primaryUrl}" style="display:inline-block;padding:10px 16px;background:#dc2626;color:#fff;text-decoration:none;border-radius:6px">Reset Password</a>`;
-        const altLink = appDeepLinkUrl ? `<p>If the button doesn't open the app, <a href="${resetUrl}">tap here</a> instead.</p>` : '';
-        
+        const altLink = appDeepLinkUrl
+          ? `<p>If the button doesn't open the app, <a href="${resetUrl}">tap here</a> instead.</p>`
+          : '';
+
         await transporter.sendMail({
           from,
           to,
@@ -116,7 +137,9 @@ export class MailService {
       }
     } catch (err) {
       console.error('Email sending error details:', err);
-      throw new InternalServerErrorException(`Failed to send email: ${err.message}`);
+      throw new InternalServerErrorException(
+        `Failed to send email: ${err.message}`,
+      );
     }
   }
-} 
+}

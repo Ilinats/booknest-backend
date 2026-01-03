@@ -1,12 +1,8 @@
 import { IsString, IsNotEmpty } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class FollowAuthorDto {
-  @IsString()
-  @IsNotEmpty()
-  authorId!: string;
-}
-
-export class UnfollowAuthorDto {
+  @ApiProperty()
   @IsString()
   @IsNotEmpty()
   authorId!: string;

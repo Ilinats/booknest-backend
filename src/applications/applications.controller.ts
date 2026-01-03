@@ -363,6 +363,36 @@ export class ApplicationsController {
     );
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Put(':applicationId/mark-sent')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Mark copy as sent (Author only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Copy marked as sent successfully',
+    type: Application,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Forbidden - Author access required or application not approved',
+  })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  markCopySent(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
+  ) {
+    return this.applicationsService.markCopySent(
+      applicationId,
+      user.sub,
+      user.userType,
+    );
+  }
+
   @UseGuards(JwtAuthGuard)
   @Delete(':applicationId')
   @ApiBearerAuth()

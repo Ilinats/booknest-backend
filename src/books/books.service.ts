@@ -287,10 +287,22 @@ export class BooksService {
       }
 
       const isAuthor =
-        userId &&
-        userType === UserType.AUTHOR &&
-        book.authorId === userId;
-      if (!isAuthor) {
+        userId && userType === UserType.AUTHOR && book.authorId === userId;
+
+      let hasApprovedApplication = false;
+      if (userId && !isAuthor) {
+        const application = await this.applicationRepo.findOne({
+          where: {
+            readerId: userId,
+            bookId: bookId,
+            status: ApplicationStatus.APPROVED,
+          },
+        });
+        hasApprovedApplication = !!application;
+      }
+
+      const canSeeFileInfo = isAuthor || hasApprovedApplication;
+      if (!canSeeFileInfo) {
         delete book.fileUrl;
         delete book.fileSize;
         delete book.fileType;
@@ -668,13 +680,16 @@ export class BooksService {
         });
       }
 
-      const [reviews, total] = await this.reviewRepo.findAndCount({
-        where: { application: { bookId } },
-        relations: ['application', 'application.reader', 'application.book'],
-        order: { createdAt: 'DESC' },
-        skip,
-        take,
-      });
+      const [reviews, total] = await this.reviewRepo
+        .createQueryBuilder('review')
+        .leftJoinAndSelect('review.application', 'application')
+        .leftJoinAndSelect('application.reader', 'reader')
+        .leftJoinAndSelect('application.book', 'book')
+        .where('application.bookId = :bookId', { bookId })
+        .orderBy('review.createdAt', 'DESC')
+        .skip(skip)
+        .take(take)
+        .getManyAndCount();
 
       return createPaginatedResponse(reviews, total, skip, take);
     }

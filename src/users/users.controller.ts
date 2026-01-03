@@ -180,4 +180,15 @@ export class UsersController {
   async findOne(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.usersService.findOneByIdResponse(id, false);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete current user account' })
+  @ApiResponse({ status: 200, description: 'Account deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async deleteAccount(@CurrentUser('sub') userId: string) {
+    await this.usersService.remove(userId);
+    return { message: 'Account deleted successfully' };
+  }
 }

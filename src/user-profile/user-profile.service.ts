@@ -170,6 +170,14 @@ export class UserProfileService {
     settings: {
       notificationsEnabled?: boolean;
       emailNotifications?: boolean;
+      notificationPreferences?: {
+        friendRequests?: boolean;
+        friendRequestAccepted?: boolean;
+        applicationApproved?: boolean;
+        applicationRejected?: boolean;
+        reviewDeadlineReminders?: boolean;
+        authorBookPublished?: boolean;
+      } | null;
     },
   ): Promise<UserProfile> {
     const profile = await this.getProfile(userId);

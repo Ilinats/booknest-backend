@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -18,8 +19,8 @@ export class CreateReviewDto {
   applicationId: string;
 
   @ApiProperty()
-  @IsInt()
-  @Min(1)
+  @IsNumber()
+  @Min(0)
   @Max(5)
   rating: number;
 

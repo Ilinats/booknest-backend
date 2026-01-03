@@ -287,7 +287,9 @@ export class BooksService {
       }
 
       const isAuthor =
-        userId && userType === UserType.AUTHOR && book.authorId === userId;
+        userId &&
+        userType === UserType.AUTHOR &&
+        book.authorId === userId;
       if (!isAuthor) {
         delete book.fileUrl;
         delete book.fileSize;

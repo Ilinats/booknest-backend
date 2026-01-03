@@ -1,9 +1,17 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { Book } from '../../books/entity/book.entity';
 import { User } from '../../users/entity/user.entity';
-
-export type ApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
-export type ReadingStatus = 'not_started' | 'currently_reading' | 'for_review' | 'reviewed';
+import { Review } from '../../reviews/entity/review.entity';
+import { ApplicationStatus, ReadingStatus } from '../enums';
 
 @Entity({ name: 'applications' })
 @Index(['bookId', 'readerId'], { unique: true })
@@ -28,7 +36,12 @@ export class Application {
   readerId!: string;
 
   @Index()
-  @Column({ name: 'status', type: 'enum', enum: ['pending', 'approved', 'rejected', 'withdrawn'], default: 'pending' })
+  @Column({
+    name: 'status',
+    type: 'enum',
+    enum: ApplicationStatus,
+    default: ApplicationStatus.PENDING,
+  })
   status!: ApplicationStatus;
 
   @Column({ name: 'application_message', type: 'text', nullable: true })
@@ -53,7 +66,12 @@ export class Application {
   reviewSubmittedAt?: Date | null;
 
   @Index()
-  @Column({ name: 'reading_status', type: 'enum', enum: ['not_started', 'currently_reading', 'for_review', 'reviewed'], default: 'not_started' })
+  @Column({
+    name: 'reading_status',
+    type: 'enum',
+    enum: ReadingStatus,
+    default: ReadingStatus.NOT_STARTED,
+  })
   readingStatus!: ReadingStatus;
 
   @Column({ name: 'reading_started_at', type: 'timestamp', nullable: true })
@@ -68,4 +86,7 @@ export class Application {
 
   @Column({ name: 'responded_by', type: 'uuid', nullable: true })
   respondedById?: string | null;
+
+  @OneToOne(() => Review, (review) => review.application)
+  review?: Review | null;
 }

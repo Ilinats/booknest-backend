@@ -1,7 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { PartialType } from '@nestjs/swagger';
+import { CreateApplicationDto } from './create-application.dto';
 
-export class UpdateApplicationDto {
-  @IsOptional()
-  @IsString()
-  applicationMessage?: string;
-}
+export class UpdateApplicationDto extends PartialType(CreateApplicationDto) {}

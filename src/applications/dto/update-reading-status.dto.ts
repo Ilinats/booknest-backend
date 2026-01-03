@@ -1,6 +1,12 @@
 import { IsEnum, IsOptional } from 'class-validator';
+import { ReadingStatus } from '../enums';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateReadingStatusDto {
-  @IsEnum(['not_started', 'currently_reading', 'for_review', 'reviewed'] as const)
-  readingStatus!: 'not_started' | 'currently_reading' | 'for_review' | 'reviewed';
+  @ApiProperty({
+    required: true,
+    enum: ReadingStatus,
+  })
+  @IsEnum(ReadingStatus)
+  readingStatus!: ReadingStatus;
 }

@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: booknest-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-booknest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-booknest_password}
+      POSTGRES_DB: ${POSTGRES_DB:-booknest}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: booknest-app
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-booknest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-booknest_password}
+      POSTGRES_DB: ${POSTGRES_DB:-booknest}
+      DATABASE_LOGGING: ${DATABASE_LOGGING:-false}
+      PORT: 3000
+      NODE_ENV: ${NODE_ENV:-production}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-booknest-files}
+      AWS_S3_BASE_URL: ${AWS_S3_BASE_URL}
+      ALLOWED_FILE_TYPES: ${ALLOWED_FILE_TYPES}
+      GMAIL_USER: ${GMAIL_USER}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      APP_DEEP_LINK_SCHEME: ${APP_DEEP_LINK_SCHEME:-booknest}
+      APP_DEEP_LINK_HOST: ${APP_DEEP_LINK_HOST:-://verify-email}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:

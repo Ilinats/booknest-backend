@@ -25,7 +25,11 @@ import { UserActivityService } from '../user-activity/user-activity.service';
 import { UserAddressService } from '../user-address/user-address.service';
 import { getUserId } from '../common';
 import { CreateAddressDto, UpdateAddressDto } from '../user-address/dto';
-import { UpdateSocialMediaDto } from './dto';
+import {
+  UpdateSocialMediaDto,
+  UpdatePrivacySettingsDto,
+  UpdateNotificationSettingsDto,
+} from './dto';
 
 @ApiTags('User Profiles')
 @Controller('profiles')
@@ -211,5 +215,45 @@ export class UserProfileController {
       custom: dto.custom,
     };
     return this.userProfileService.updateSocialMedia(userId, socialMedia);
+  }
+
+  @Put('me/privacy')
+  @ApiOperation({
+    summary: 'Update privacy settings (Authenticated)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Privacy settings updated successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async updatePrivacySettings(
+    @Request() req: any,
+    @Body() dto: UpdatePrivacySettingsDto,
+  ) {
+    const userId = getUserId(req);
+    return this.userProfileService.updatePrivacySettings(userId, dto);
+  }
+
+  @Put('me/notifications')
+  @ApiOperation({
+    summary: 'Update notification settings (Authenticated)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Notification settings updated successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async updateNotificationSettings(
+    @Request() req: any,
+    @Body() dto: UpdateNotificationSettingsDto,
+  ) {
+    const userId = getUserId(req);
+    return this.userProfileService.updateNotificationSettings(userId, {
+      notificationsEnabled: dto.notificationsEnabled,
+      emailNotifications: dto.emailNotifications,
+      notificationPreferences: dto.notificationPreferences,
+    });
   }
 }

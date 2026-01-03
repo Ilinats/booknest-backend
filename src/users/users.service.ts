@@ -366,7 +366,6 @@ export class UsersService {
       this.reviewRepository.count({
         where: {
           application: { book: { authorId } },
-          isPublic: true,
         },
       }),
       this.getAuthorAverageRating(authorId),
@@ -551,7 +550,6 @@ export class UsersService {
       .leftJoin('application.book', 'book')
       .select('COUNT(DISTINCT application.bookId)', 'count')
       .where('book.authorId = :authorId', { authorId })
-      .andWhere('review.isPublic = :isPublic', { isPublic: true })
       .getRawOne();
 
     return parseInt(result?.count || '0');
@@ -564,7 +562,6 @@ export class UsersService {
       .leftJoin('application.book', 'book')
       .select('SUM(review.wordCount)', 'total')
       .where('book.authorId = :authorId', { authorId })
-      .andWhere('review.isPublic = :isPublic', { isPublic: true })
       .andWhere('review.wordCount IS NOT NULL')
       .getRawOne();
 

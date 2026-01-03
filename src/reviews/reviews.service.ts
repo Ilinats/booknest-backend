@@ -126,7 +126,7 @@ export class ReviewsService {
     return review;
   }
 
-  async findOne(reviewId: string, userId: string, userType?: string) {
+  async findOne(reviewId: string, userId?: string, userType?: string) {
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId },
       relations: [
@@ -141,8 +141,8 @@ export class ReviewsService {
       throw new NotFoundException(ReviewErrorCode.REVIEW_NOT_FOUND);
     }
 
-    const isReader = review.application.readerId === userId;
-    const isAuthor = review.application.book.authorId === userId;
+    const isReader = userId && review.application.readerId === userId;
+    const isAuthor = userId && review.application.book.authorId === userId;
     const isPublic = review.isPublic;
 
     if (!isReader && !isAuthor && !isPublic) {
@@ -245,11 +245,10 @@ export class ReviewsService {
   ) {
     let isAuthor = false;
     if (userType === 'author' && userId) {
-      const application = await this.applicationRepo.findOne({
-        where: { bookId },
-        relations: ['book'],
+      const book = await this.bookRepo.findOne({
+        where: { id: bookId, authorId: userId },
       });
-      isAuthor = application?.book?.authorId === userId;
+      isAuthor = book !== null;
     }
 
     const skip = dto.skip ?? 0;

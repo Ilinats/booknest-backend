@@ -20,7 +20,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ReviewsService } from './reviews.service';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { JwtAuthGuard, RolesGuard, OptionalJwtAuthGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import {
   CurrentUser,
@@ -49,6 +49,7 @@ export class ReviewsController {
     return this.reviewsService.create(readerId, dto);
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':reviewId')
   @ApiOperation({
     summary:
@@ -56,15 +57,12 @@ export class ReviewsController {
   })
   @ApiResponse({ status: 200, description: 'Review details' })
   @ApiResponse({ status: 404, description: 'Review not found' })
+  @ApiResponse({ status: 403, description: 'Access denied for private review' })
   findOne(
     @CurrentUser() user: JwtPayload | undefined,
     @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
   ) {
-    return this.reviewsService.findOne(
-      reviewId,
-      user?.sub || '',
-      user?.userType,
-    );
+    return this.reviewsService.findOne(reviewId, user?.sub, user?.userType);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -140,13 +140,11 @@ export class BooksAnalyticsService {
       this.reviewRepo.count({
         where: {
           application: { bookId },
-          isPublic: true,
         },
       }),
       this.reviewRepo.find({
         where: {
           application: { bookId },
-          isPublic: true,
         },
         relations: ['application', 'application.reader'],
       }),
@@ -470,7 +468,6 @@ export class BooksAnalyticsService {
       .select('review.rating', 'rating')
       .addSelect('COUNT(*)', 'count')
       .where('application.bookId = :bookId', { bookId })
-      .andWhere('review.isPublic = :isPublic', { isPublic: true })
       .groupBy('review.rating')
       .orderBy('review.rating', 'ASC')
       .getRawMany();
@@ -491,7 +488,6 @@ export class BooksAnalyticsService {
       .select('review.reviewType', 'type')
       .addSelect('COUNT(*)', 'count')
       .where('application.bookId = :bookId', { bookId })
-      .andWhere('review.isPublic = :isPublic', { isPublic: true })
       .groupBy('review.reviewType')
       .getRawMany();
 
@@ -509,7 +505,6 @@ export class BooksAnalyticsService {
       .leftJoin('review.application', 'application')
       .select('AVG(review.wordCount)', 'average')
       .where('application.bookId = :bookId', { bookId })
-      .andWhere('review.isPublic = :isPublic', { isPublic: true })
       .andWhere('review.wordCount IS NOT NULL')
       .getRawOne();
 
@@ -520,7 +515,6 @@ export class BooksAnalyticsService {
     return this.reviewRepo.find({
       where: {
         application: { bookId },
-        isPublic: true,
       },
       relations: ['application', 'application.reader'],
       order: { createdAt: 'DESC' },
@@ -597,7 +591,6 @@ export class BooksAnalyticsService {
       .select('application.copyReceivedAt', 'copyReceivedAt')
       .addSelect('review.createdAt', 'reviewCreatedAt')
       .where('application.bookId = :bookId', { bookId })
-      .andWhere('review.isPublic = :isPublic', { isPublic: true })
       .andWhere('application.copyReceivedAt IS NOT NULL')
       .getRawMany();
 
@@ -624,7 +617,6 @@ export class BooksAnalyticsService {
       this.reviewRepo.count({
         where: {
           application: { bookId },
-          isPublic: true,
         },
       }),
     ]);

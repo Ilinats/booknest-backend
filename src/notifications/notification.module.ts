@@ -1,34 +1,40 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DeviceToken } from './entity/device-token.entity';
 import { Notification } from './entity/notification.entity';
-import { DeviceTokenService } from './device-token.service';
-import { DeviceTokenController } from './device-token.controller';
+import { DeviceToken } from './entity/device-token.entity';
 import { NotificationService } from './notification.service';
-import { NotificationsController } from './notifications.controller';
+import { DeviceTokenService } from './device-token.service';
+import { NotificationsController } from './notification.controller';
+import { DeviceTokenController } from './device-token.controller';
 import { FirebaseNotificationService } from './firebase-notification.service';
-import { UsersModule } from '../users/users.module';
+import { UserProfileModule } from '../user-profile/user-profile.module';
+import { Book } from '../books/entity';
+import { Application } from '../applications/entity';
+import { User } from '../users/entity';
 import { AuthModule } from '../auth/auth.module';
-import { Book } from '../books/entity/book.entity';
-import { Application } from '../applications/entity/application.entity';
-import { User } from '../users/entity/user.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([DeviceToken, Notification, Book, Application, User]),
-    forwardRef(() => UsersModule),
+    TypeOrmModule.forFeature([
+      Notification,
+      DeviceToken,
+      Book,
+      Application,
+      User,
+    ]),
+    forwardRef(() => UserProfileModule),
     AuthModule,
   ],
+  controllers: [NotificationsController, DeviceTokenController],
   providers: [
-    DeviceTokenService,
     NotificationService,
+    DeviceTokenService,
     FirebaseNotificationService,
     {
       provide: 'NotificationService',
       useExisting: NotificationService,
     },
   ],
-  controllers: [DeviceTokenController, NotificationsController],
   exports: [
     NotificationService,
     DeviceTokenService,
@@ -38,5 +44,4 @@ import { User } from '../users/entity/user.entity';
     },
   ],
 })
-export class NotificationsModule {}
-
+export class NotificationModule {}

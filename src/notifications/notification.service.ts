@@ -1,10 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Notification, NotificationType } from './entity/notification.entity';
+import { Notification } from './entity/notification.entity';
+import { NotificationTypeEnum } from './enums';
 import { DeviceTokenService } from './device-token.service';
 import { FirebaseNotificationService } from './firebase-notification.service';
-import { UserProfileService } from '../users/user-profile.service';
+import { UserProfileService } from '../user-profile/user-profile.service';
+import { createPaginatedResponse } from '../common/utils/pagination.util';
+import { NotificationErrorCode } from './errors';
 
 @Injectable()
 export class NotificationService {
@@ -20,7 +23,7 @@ export class NotificationService {
 
   async createAndSendNotification(
     userId: string,
-    type: NotificationType,
+    type: NotificationTypeEnum,
     title: string,
     body: string,
     data?: Record<string, any>,
@@ -32,19 +35,25 @@ export class NotificationService {
     }
 
     const preferences = profile.notificationPreferences || {};
-    const typePreferenceMap: Record<NotificationType, keyof typeof preferences> = {
-      friend_request_received: 'friendRequests',
-      friend_request_accepted: 'friendRequestAccepted',
-      friend_request_declined: 'friendRequestAccepted', // Use same preference as accepted
-      application_approved: 'applicationApproved',
-      application_rejected: 'applicationRejected',
-      review_deadline_reminder: 'reviewDeadlineReminders',
-      author_book_published: 'authorBookPublished',
+    const typePreferenceMap: Record<
+      NotificationTypeEnum,
+      keyof typeof preferences
+    > = {
+      [NotificationTypeEnum.FRIEND_REQUEST_RECEIVED]: 'friendRequests',
+      [NotificationTypeEnum.FRIEND_REQUEST_ACCEPTED]: 'friendRequestAccepted',
+      [NotificationTypeEnum.FRIEND_REQUEST_DECLINED]: 'friendRequestAccepted',
+      [NotificationTypeEnum.APPLICATION_APPROVED]: 'applicationApproved',
+      [NotificationTypeEnum.APPLICATION_REJECTED]: 'applicationRejected',
+      [NotificationTypeEnum.REVIEW_DEADLINE_REMINDER]:
+        'reviewDeadlineReminders',
+      [NotificationTypeEnum.AUTHOR_BOOK_PUBLISHED]: 'authorBookPublished',
     };
 
     const preferenceKey = typePreferenceMap[type];
     if (preferenceKey && preferences[preferenceKey] === false) {
-      this.logger.log(`Notification type ${type} disabled for user ${userId}, skipping`);
+      this.logger.log(
+        `Notification type ${type} disabled for user ${userId}, skipping`,
+      );
       return null;
     }
 
@@ -60,28 +69,42 @@ export class NotificationService {
       isRead: false,
     });
 
-    const savedNotification = await this.notificationRepository.save(notification);
+    const savedNotification =
+      await this.notificationRepository.save(notification);
 
     try {
       const tokens = await this.deviceTokenService.getActiveTokens(userId);
-      this.logger.log(`Found ${tokens.length} active device token(s) for user ${userId}`);
-      
+      this.logger.log(
+        `Found ${tokens.length} active device token(s) for user ${userId}`,
+      );
+
       if (tokens.length > 0) {
-        const result = await this.firebaseNotificationService.sendNotificationToMultiple(tokens, {
-          title,
-          body,
-          data: {
-            notificationId: savedNotification.id,
-            type,
-            ...data,
-          },
-        });
-        this.logger.log(`Push notification sent: ${result.success} successful, ${result.failure} failed`);
+        const result =
+          await this.firebaseNotificationService.sendNotificationToMultiple(
+            tokens,
+            {
+              title,
+              body,
+              data: {
+                notificationId: savedNotification.id,
+                type,
+                ...data,
+              },
+            },
+          );
+        this.logger.log(
+          `Push notification sent: ${result.success} successful, ${result.failure} failed`,
+        );
       } else {
-        this.logger.warn(`No active device tokens found for user ${userId}, notification saved but not sent as push`);
+        this.logger.warn(
+          `No active device tokens found for user ${userId}, notification saved but not sent as push`,
+        );
       }
     } catch (error) {
-      this.logger.error(`Failed to send push notification: ${error}`, error?.stack);
+      this.logger.error(
+        `Failed to send push notification: ${error}`,
+        error?.stack,
+      );
     }
 
     return savedNotification;
@@ -89,25 +112,38 @@ export class NotificationService {
 
   async getUserNotifications(
     userId: string,
-    limit: number = 50,
-    offset: number = 0,
-    unreadOnly: boolean = false,
-  ): Promise<{ notifications: Notification[]; total: number }> {
+    dto: { skip?: number; take?: number; unreadOnly?: boolean },
+  ) {
+    const skip = dto.skip ?? 0;
+    const take = dto.take ?? 20;
+    const unreadOnly = dto.unreadOnly ?? false;
+
+    this.logger.log(
+      `Getting notifications for user ${userId}, unreadOnly: ${unreadOnly}, type: ${typeof unreadOnly}`,
+    );
+
     const query = this.notificationRepository
       .createQueryBuilder('notification')
       .where('notification.userId = :userId', { userId })
       .orderBy('notification.createdAt', 'DESC');
 
-    if (unreadOnly) {
+    if (unreadOnly === true) {
+      this.logger.log('Filtering to unread notifications only');
       query.andWhere('notification.isRead = :isRead', { isRead: false });
+    } else {
+      this.logger.log('Returning all notifications (read and unread)');
     }
 
     const [notifications, total] = await query
-      .skip(offset)
-      .take(limit)
+      .skip(skip)
+      .take(take)
       .getManyAndCount();
 
-    return { notifications, total };
+    this.logger.log(
+      `Found ${notifications.length} notifications (total: ${total})`,
+    );
+
+    return createPaginatedResponse(notifications, total, skip, take);
   }
 
   async getUnreadCount(userId: string): Promise<number> {
@@ -116,13 +152,16 @@ export class NotificationService {
     });
   }
 
-  async markAsRead(notificationId: string, userId: string): Promise<Notification> {
+  async markAsRead(
+    notificationId: string,
+    userId: string,
+  ): Promise<Notification> {
     const notification = await this.notificationRepository.findOne({
       where: { id: notificationId, userId },
     });
 
     if (!notification) {
-      throw new NotFoundException('Notification not found');
+      throw new NotFoundException(NotificationErrorCode.NOTIFICATION_NOT_FOUND);
     }
 
     if (!notification.isRead) {
@@ -141,8 +180,15 @@ export class NotificationService {
     );
   }
 
-  async deleteNotification(notificationId: string, userId: string): Promise<void> {
+  async deleteNotification(
+    notificationId: string,
+    userId: string,
+  ): Promise<void> {
     await this.notificationRepository.delete({ id: notificationId, userId });
+  }
+
+  async deleteAllNotifications(userId: string): Promise<void> {
+    await this.notificationRepository.delete({ userId });
   }
 
   async notifyFriendRequestReceived(
@@ -152,7 +198,7 @@ export class NotificationService {
   ): Promise<Notification | null> {
     return this.createAndSendNotification(
       recipientId,
-      'friend_request_received',
+      NotificationTypeEnum.FRIEND_REQUEST_RECEIVED,
       'New Friend Request',
       `${requesterName} sent you a friend request`,
       { relatedUserId: requesterId },
@@ -166,7 +212,7 @@ export class NotificationService {
   ): Promise<Notification | null> {
     return this.createAndSendNotification(
       requesterId,
-      'friend_request_accepted',
+      NotificationTypeEnum.FRIEND_REQUEST_ACCEPTED,
       'Friend Request Accepted',
       `${accepterName} accepted your friend request`,
       { relatedUserId: accepterId },
@@ -180,7 +226,7 @@ export class NotificationService {
   ): Promise<Notification | null> {
     return this.createAndSendNotification(
       requesterId,
-      'friend_request_declined',
+      NotificationTypeEnum.FRIEND_REQUEST_DECLINED,
       'Friend Request Declined',
       `${declinerName} declined your friend request`,
       { relatedUserId: declinerId },
@@ -194,7 +240,7 @@ export class NotificationService {
   ): Promise<Notification | null> {
     return this.createAndSendNotification(
       accepterId,
-      'friend_request_accepted',
+      NotificationTypeEnum.FRIEND_REQUEST_ACCEPTED,
       'Friend Request Accepted',
       `You accepted ${requesterName}'s friend request`,
       { relatedUserId: requesterId },
@@ -208,7 +254,7 @@ export class NotificationService {
   ): Promise<Notification | null> {
     return this.createAndSendNotification(
       declinerId,
-      'friend_request_declined',
+      NotificationTypeEnum.FRIEND_REQUEST_DECLINED,
       'Friend Request Declined',
       `You declined ${requesterName}'s friend request`,
       { relatedUserId: requesterId },
@@ -223,7 +269,7 @@ export class NotificationService {
   ): Promise<Notification | null> {
     return this.createAndSendNotification(
       readerId,
-      'application_approved',
+      NotificationTypeEnum.APPLICATION_APPROVED,
       'Application Approved!',
       `Your application for "${bookTitle}" has been approved`,
       { bookId, applicationId },
@@ -238,7 +284,7 @@ export class NotificationService {
   ): Promise<Notification | null> {
     return this.createAndSendNotification(
       readerId,
-      'application_rejected',
+      NotificationTypeEnum.APPLICATION_REJECTED,
       'Application Update',
       `Your application for "${bookTitle}" was not approved`,
       { bookId, applicationId },
@@ -255,7 +301,7 @@ export class NotificationService {
     const dayText = daysUntilDeadline === 1 ? 'day' : 'days';
     return this.createAndSendNotification(
       readerId,
-      'review_deadline_reminder',
+      NotificationTypeEnum.REVIEW_DEADLINE_REMINDER,
       'Review Deadline Reminder',
       `You have ${daysUntilDeadline} ${dayText} left to submit your review for "${bookTitle}"`,
       { bookId, applicationId, daysUntilDeadline },
@@ -271,11 +317,10 @@ export class NotificationService {
   ): Promise<Notification | null> {
     return this.createAndSendNotification(
       followerId,
-      'author_book_published',
+      NotificationTypeEnum.AUTHOR_BOOK_PUBLISHED,
       'New Book Published',
       `${authorName} published a new book: "${bookTitle}"`,
       { bookId, authorId, relatedUserId: authorId },
     );
   }
 }
-

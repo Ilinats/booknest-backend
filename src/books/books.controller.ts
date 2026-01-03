@@ -30,7 +30,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { BooksService } from './books.service';
 import { FilesService } from '../files/files.service';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards';
+import { JwtAuthGuard, RolesGuard, OptionalJwtAuthGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import {
   CurrentUser,
@@ -392,6 +392,7 @@ export class BooksController {
     );
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':bookId')
   @ApiOperation({ summary: 'Get book by ID' })
   @ApiResponse({ status: 200, description: 'Book details', type: Book })

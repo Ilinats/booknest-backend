@@ -17,7 +17,7 @@ import { User } from '../users/entity/user.entity';
 import { UserAddress } from '../user-address/entity/user-address.entity';
 import { Review } from '../reviews/entity/review.entity';
 import { ApplicationStatus, ReadingStatus } from './enums';
-import { SelectionMethod } from '../books/enums';
+import { SelectionMethod, AgeRating } from '../books/enums';
 import {
   CreateApplicationDto,
   ApplicationStatusDto,
@@ -124,8 +124,20 @@ export class ApplicationsService {
       });
     }
 
+    if (!this.isUserEligibleForBook(user, book)) {
+      const error =
+        ApplicationErrors[
+          ApplicationErrorCode.APPLICATION_AGE_RESTRICTION_VIOLATION
+        ];
+      throw new ForbiddenException({
+        message: error.message,
+        code: error.code,
+      });
+    }
+
     let initialStatus = ApplicationStatus.PENDING;
     let respondedAt: Date | null = null;
+    let copySentAt: Date | null = null;
 
     if (
       book.selectionMethod === SelectionMethod.FIRST_COME &&
@@ -135,6 +147,9 @@ export class ApplicationsService {
       respondedAt = now;
       book.availableCopies -= 1;
       await this.bookRepo.save(book);
+      if (book.distributionType === 'digital') {
+        copySentAt = now;
+      }
     }
 
     const application = this.applicationRepo.create({
@@ -143,6 +158,7 @@ export class ApplicationsService {
       applicationMessage: dto.applicationMessage,
       status: initialStatus,
       respondedAt,
+      copySentAt,
     });
 
     const saved = await this.applicationRepo.save(application);
@@ -444,6 +460,9 @@ export class ApplicationsService {
           'availableCopies',
           1,
         );
+        if (application.book.distributionType === 'digital') {
+          application.copySentAt = new Date();
+        }
       }
 
       if (this.notificationService) {
@@ -700,6 +719,9 @@ export class ApplicationsService {
         'availableCopies',
         1,
       );
+      if (application.book.distributionType === 'digital') {
+        application.copySentAt = new Date();
+      }
     }
 
     const saved = await this.applicationRepo.save(application);
@@ -826,6 +848,13 @@ export class ApplicationsService {
         'availableCopies',
         updatedApplications.length,
       );
+      const now = new Date();
+      updatedApplications.forEach((app) => {
+        if (book.distributionType === 'digital') {
+          app.copySentAt = now;
+        }
+      });
+      await this.applicationRepo.save(updatedApplications);
     }
 
     if (this.notificationService) {
@@ -1264,12 +1293,16 @@ export class ApplicationsService {
     const nowDate = new Date();
 
     if (winners.length > 0) {
+      const updateData: any = {
+        status: ApplicationStatus.APPROVED,
+        respondedAt: nowDate,
+      };
+      if (book.distributionType === 'digital') {
+        updateData.copySentAt = nowDate;
+      }
       await this.applicationRepo.update(
         { id: In(winners.map((w) => w.id)) },
-        {
-          status: ApplicationStatus.APPROVED,
-          respondedAt: nowDate,
-        },
+        updateData,
       );
 
       book.availableCopies -= winners.length;
@@ -1327,5 +1360,37 @@ export class ApplicationsService {
       rejected: losers.length,
       message: `Lottery completed: ${winners.length} approved, ${losers.length} rejected`,
     };
+  }
+
+  private isUserEligibleForBook(user: User, book: Book): boolean {
+    if (book.ageRating === AgeRating.ALL) {
+      return true;
+    }
+
+    if (!user.birthDate) {
+      return true;
+    }
+
+    const birthDate = new Date(user.birthDate);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (
+      monthDiff < 0 ||
+      (monthDiff === 0 && today.getDate() < birthDate.getDate())
+    ) {
+      age--;
+    }
+
+    switch (book.ageRating) {
+      case AgeRating.THIRTEEN_PLUS:
+        return age >= 13;
+      case AgeRating.SIXTEEN_PLUS:
+        return age >= 16;
+      case AgeRating.EIGHTEEN_PLUS:
+        return age >= 18;
+      default:
+        return true;
+    }
   }
 }

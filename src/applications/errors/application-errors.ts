@@ -15,6 +15,7 @@ export enum ApplicationErrorCode {
   APPLICATION_BOOK_NOT_ACTIVE = 'APPLICATION_BOOK_NOT_ACTIVE',
   APPLICATION_NO_AVAILABLE_COPIES = 'APPLICATION_NO_AVAILABLE_COPIES',
   APPLICATION_DEADLINE_PASSED = 'APPLICATION_DEADLINE_PASSED',
+  APPLICATION_AGE_RESTRICTION_VIOLATION = 'APPLICATION_AGE_RESTRICTION_VIOLATION',
 }
 
 export const ApplicationErrors: Record<ApplicationErrorCode, AppError> = {
@@ -88,6 +89,11 @@ export const ApplicationErrors: Record<ApplicationErrorCode, AppError> = {
   [ApplicationErrorCode.APPLICATION_DEADLINE_PASSED]: {
     code: ApplicationErrorCode.APPLICATION_DEADLINE_PASSED,
     message: 'Application deadline has passed',
+    statusCode: 400,
+  },
+  [ApplicationErrorCode.APPLICATION_AGE_RESTRICTION_VIOLATION]: {
+    code: ApplicationErrorCode.APPLICATION_AGE_RESTRICTION_VIOLATION,
+    message: 'You do not meet the age requirement to apply for this book',
     statusCode: 400,
   },
 };

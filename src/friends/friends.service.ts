@@ -63,8 +63,6 @@ export class FriendsService {
         throw new ConflictException(FriendErrorCode.ALREADY_FRIENDS);
       } else if (existingFriendship.status === 'pending') {
         throw new ConflictException(FriendErrorCode.REQUEST_ALREADY_PENDING);
-      } else if (existingFriendship.status === 'blocked') {
-        throw new ConflictException(FriendErrorCode.REQUEST_BLOCKED);
       }
     }
 
@@ -368,24 +366,6 @@ export class FriendsService {
     return !!friendship;
   }
 
-  async getFriendsCount(userId: string): Promise<number> {
-    return this.friendRepository.count({
-      where: [
-        { requesterId: userId, status: FriendStatus.ACCEPTED },
-        { addresseeId: userId, status: FriendStatus.ACCEPTED },
-      ],
-    });
-  }
-
-  async getReceivedRequestsCount(userId: string): Promise<number> {
-    return this.friendRepository.count({
-      where: {
-        addresseeId: userId,
-        status: FriendStatus.PENDING,
-      },
-    });
-  }
-
   async getFriendsList(
     userId: string,
     sortBy?: 'alphabetical' | 'recently_added' | 'most_active',
@@ -556,62 +536,6 @@ export class FriendsService {
         isRequester: friendship?.isRequester || false,
       };
     });
-  }
-
-  async getFriendSuggestions(
-    userId: string,
-    limit: number = 10,
-  ): Promise<ReturnType<typeof sanitizeUserPublic>[]> {
-    const userPreferences = await this.userRepository.manager.query(
-      `SELECT genre_id FROM user_genre_preferences WHERE user_id = $1`,
-      [userId],
-    );
-
-    if (userPreferences.length === 0) {
-      return [];
-    }
-
-    const genreIds = userPreferences.map(
-      (p: { genre_id: number }) => p.genre_id,
-    );
-
-    const friendIds = await this.getFriendIds(userId);
-    const excludeIds = [userId, ...friendIds];
-
-    if (excludeIds.length === 0) {
-      return [];
-    }
-
-    const suggestions = await this.userRepository.manager.query(
-      `
-      SELECT DISTINCT u.id, COUNT(ugp.genre_id) as matching_genres
-      FROM users u
-      INNER JOIN user_genre_preferences ugp ON ugp.user_id = u.id
-      WHERE u.id != ALL($1::uuid[])
-        AND u.is_active = true
-        AND ugp.genre_id = ANY($2::int[])
-        AND NOT EXISTS (
-          SELECT 1 FROM friends f
-          WHERE (f.requester_id = $3::uuid AND f.addressee_id = u.id)
-             OR (f.requester_id = u.id AND f.addressee_id = $3::uuid)
-        )
-      GROUP BY u.id
-      ORDER BY matching_genres DESC, u.created_at DESC
-      LIMIT $4
-      `,
-      [excludeIds, genreIds, userId, limit],
-    );
-
-    if (suggestions.length === 0) {
-      return [];
-    }
-
-    const suggestionIds = suggestions.map((s: { id: string }) => s.id);
-    const suggestedUsers = await this.userRepository.find({
-      where: { id: In(suggestionIds) },
-    });
-
-    return suggestedUsers.map((user) => sanitizeUserPublic(user));
   }
 
   async cancelFriendRequest(

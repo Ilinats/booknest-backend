@@ -67,19 +67,6 @@ export class FilesController {
     };
   }
 
-  @Delete(':fileKey')
-  @ApiOperation({ summary: 'Delete a file (Authenticated)' })
-  @ApiResponse({ status: 200, description: 'File deleted successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async deleteFile(
-    @Param('fileKey') fileKey: string,
-    @CurrentUser() user: User,
-  ) {
-    await this.filesService.deleteFile(fileKey);
-
-    return { message: 'File deleted successfully' };
-  }
-
   @Get('metadata/:fileKey')
   @ApiOperation({ summary: 'Get file metadata (Authenticated)' })
   @ApiResponse({

@@ -23,7 +23,6 @@ import {
   ApplicationStatusDto,
   BulkActionDto,
   UpdateReadingStatusDto,
-  ShippingApplicationDto,
   BulkMarkSentDto,
   UpdateApplicationCompleteDto,
   FindApplicationsDto,
@@ -1054,90 +1053,6 @@ export class ApplicationsService {
 
     application.status = ApplicationStatus.WITHDRAWN;
     return await this.applicationRepo.save(application);
-  }
-
-  async getShippingInfo(
-    bookId: string,
-    authorId: string,
-    userType?: string,
-  ): Promise<ShippingApplicationDto[]> {
-    ensureAuthor(userType);
-
-    const book = await this.bookRepo.findOne({ where: { id: bookId } });
-    if (!book) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
-    }
-
-    if (book.authorId !== authorId) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_OWNED_BY_AUTHOR];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
-    }
-
-    if (
-      book.distributionType !== 'physical' &&
-      book.distributionType !== 'both'
-    ) {
-      return [];
-    }
-
-    const applications = await this.applicationRepo.find({
-      where: { bookId, status: ApplicationStatus.APPROVED },
-      relations: ['reader'],
-      order: { appliedAt: 'ASC' },
-    });
-
-    if (applications.length === 0) {
-      return [];
-    }
-
-    const readerIds = applications.map((app) => app.readerId);
-
-    const addresses = await this.userAddressRepo.find({
-      where: { userId: In(readerIds) },
-      order: { isPrimary: 'DESC', createdAt: 'ASC' },
-    });
-
-    const addressesMap = new Map<string, UserAddress[]>();
-    addresses.forEach((addr) => {
-      const existing = addressesMap.get(addr.userId) || [];
-      existing.push(addr);
-      addressesMap.set(addr.userId, existing);
-    });
-
-    return applications.map((app) => {
-      const reader = app.reader;
-      const readerAddresses = addressesMap.get(app.readerId) || [];
-
-      const primaryAddress =
-        readerAddresses.find((addr) => addr.isPrimary) || readerAddresses[0];
-
-      return {
-        id: app.id,
-        readerId: app.readerId,
-        readerFirstName: reader.firstName,
-        readerLastName: reader.lastName,
-        readerEmail: reader.email,
-        applicationMessage: app.applicationMessage,
-        authorNotes: app.authorNotes,
-        copySentAt: app.copySentAt,
-        respondedAt: app.respondedAt,
-        appliedAt: app.appliedAt,
-        address: primaryAddress
-          ? {
-              id: primaryAddress.id,
-              streetAddress: primaryAddress.streetAddress,
-              city: primaryAddress.city,
-              postalCode: primaryAddress.postalCode,
-              country: primaryAddress.country,
-              isPrimary: primaryAddress.isPrimary,
-            }
-          : null,
-      };
-    });
   }
 
   async bulkMarkCopySent(

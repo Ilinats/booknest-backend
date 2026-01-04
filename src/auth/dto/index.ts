@@ -1,6 +1,5 @@
 export * from './auth-response.dto';
 export * from './forgot-password.dto';
-export * from './google-auth.dto';
 export * from './login.dto';
 export * from './login-response.dto';
 export * from './logout-response.dto';

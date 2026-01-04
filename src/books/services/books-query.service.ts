@@ -8,10 +8,8 @@ import { Genre } from '../../genres/entity/genre.entity';
 import { Application } from '../../applications/entity/application.entity';
 import { BrowseBooksDto } from '../dto/browse-books.dto';
 import { ApplicationStatusFilter, DeadlineFilter, BookSortBy } from '../enums';
-import { ApplicationStatus } from '../../applications/enums';
 import { UserType } from '../../users/enums';
 import { createPaginatedResponse } from '../../common/utils/pagination.util';
-import { sanitizeBooksForUser } from '../../common/utils/book-sanitizer.util';
 
 @Injectable()
 export class BooksQueryService {
@@ -763,72 +761,6 @@ export class BooksQueryService {
 
     this.logger.log(`Trending books found: ${trendingBooks.length}`);
     return trendingBooks;
-  }
-
-  async searchSuggestions(
-    query: string,
-    limit: number = 10,
-  ): Promise<{
-    books: Array<{ id: string; title: string }>;
-    authors: Array<{ id: string; name: string }>;
-    series: Array<{ id: string; name: string }>;
-  }> {
-    if (!query || query.trim().length === 0) {
-      return { books: [], authors: [], series: [] };
-    }
-
-    const searchTerm = `%${query.trim()}%`;
-    const perCategoryLimit = Math.ceil(limit / 3);
-
-    const booksQuery = `
-      SELECT DISTINCT b.id, b.title
-      FROM books b
-      WHERE b.status = 'active'
-        AND b.title ILIKE $1
-      ORDER BY b.published_at DESC
-      LIMIT $2
-    `;
-
-    const authorsQuery = `
-      SELECT DISTINCT u.id, CONCAT(u.first_name, ' ', u.last_name) as name
-      FROM users u
-      INNER JOIN books b ON b.author_id = u.id
-      WHERE b.status = 'active'
-        AND (u.first_name ILIKE $1 OR u.last_name ILIKE $1 OR CONCAT(u.first_name, ' ', u.last_name) ILIKE $1)
-      ORDER BY u.first_name, u.last_name
-      LIMIT $2
-    `;
-
-    const seriesQuery = `
-      SELECT DISTINCT s.id, s.name
-      FROM series s
-      INNER JOIN books b ON b.series_id = s.id
-      WHERE b.status = 'active'
-        AND s.name ILIKE $1
-      ORDER BY s.name
-      LIMIT $2
-    `;
-
-    const [books, authors, series] = await Promise.all([
-      this.dataSource.query(booksQuery, [searchTerm, perCategoryLimit]),
-      this.dataSource.query(authorsQuery, [searchTerm, perCategoryLimit]),
-      this.dataSource.query(seriesQuery, [searchTerm, perCategoryLimit]),
-    ]);
-
-    return {
-      books: books.map((row: { id: string; title: string }) => ({
-        id: row.id,
-        title: row.title,
-      })),
-      authors: authors.map((row: { id: string; name: string }) => ({
-        id: row.id,
-        name: row.name,
-      })),
-      series: series.map((row: { id: string; name: string }) => ({
-        id: row.id,
-        name: row.name,
-      })),
-    };
   }
 
   private normalizeGenreIds(genres?: number | number[]): number[] | undefined {

@@ -233,40 +233,6 @@ export class BooksService {
     return books;
   }
 
-  async findBySeries(seriesId: string): Promise<Book[]> {
-    return await this.bookRepo.find({
-      where: { seriesId, status: BookStatus.ACTIVE },
-      relations: ['author', 'series', 'bookGenres', 'bookGenres.genre'],
-      order: { seriesOrder: 'ASC', publishedAt: 'DESC' },
-    });
-  }
-
-  async getBooksWithApproachingDeadline(
-    authorId: string,
-    days: number = 7,
-  ): Promise<Book[]> {
-    const now = new Date();
-    const deadlineThreshold = new Date();
-    deadlineThreshold.setDate(deadlineThreshold.getDate() + days);
-
-    return await this.bookRepo
-      .find({
-        where: {
-          authorId,
-          status: BookStatus.ACTIVE,
-        },
-        relations: ['author', 'series', 'bookGenres', 'bookGenres.genre'],
-        order: { applicationDeadline: 'ASC' },
-      })
-      .then((books) =>
-        books.filter(
-          (book) =>
-            book.applicationDeadline > now &&
-            book.applicationDeadline <= deadlineThreshold,
-        ),
-      );
-  }
-
   async findOnePublic(
     bookId: string,
     userId?: string,
@@ -530,17 +496,6 @@ export class BooksService {
     }>
   > {
     return this.booksQueryService.trending(opts, userId, userType);
-  }
-
-  async searchSuggestions(
-    query: string,
-    limit: number = 10,
-  ): Promise<{
-    books: Array<{ id: string; title: string }>;
-    authors: Array<{ id: string; name: string }>;
-    series: Array<{ id: string; name: string }>;
-  }> {
-    return this.booksQueryService.searchSuggestions(query, limit);
   }
 
   async stats(authorId: string, bookId: string) {

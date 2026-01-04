@@ -49,45 +49,12 @@ export class AuthorFollowController {
     return this.authorFollowService.getFollowedAuthors(userId);
   }
 
-  @Get('following/with-stats')
-  @ApiOperation({
-    summary: 'Get followed authors with statistics (Authenticated)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of followed authors with stats',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getFollowedAuthorsWithStats(@Request() req: any) {
-    const userId = getUserId(req);
-    return this.authorFollowService.getFollowedAuthorsWithStats(userId);
-  }
-
   @Get('followers/:authorId')
   @ApiOperation({ summary: 'Get author followers (Authenticated)' })
   @ApiResponse({ status: 200, description: 'List of author followers' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getAuthorFollowers(@Param('authorId') authorId: string) {
     return this.authorFollowService.getAuthorFollowers(authorId);
-  }
-
-  @Get('followers/:authorId/count')
-  @ApiOperation({ summary: 'Get author followers count (Authenticated)' })
-  @ApiResponse({
-    status: 200,
-    description: 'Number of followers',
-    schema: {
-      type: 'object',
-      properties: {
-        count: { type: 'number' },
-      },
-    },
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getAuthorFollowersCount(@Param('authorId') authorId: string) {
-    const count =
-      await this.authorFollowService.getAuthorFollowersCount(authorId);
-    return { count };
   }
 
   @Get('following/check/:authorId')

@@ -22,7 +22,10 @@ import { FriendsService } from './friends.service';
 import { UserProfileService } from '../user-profile/user-profile.service';
 import { UserActivityService } from '../user-activity/user-activity.service';
 import { getUserId } from '../common';
-import { CurrentUser, JwtPayload } from '../auth/decorators/current-user.decorator';
+import {
+  CurrentUser,
+  JwtPayload,
+} from '../auth/decorators/current-user.decorator';
 import { UserType } from '../users/enums';
 import { FriendStatus } from './enums';
 
@@ -45,9 +48,14 @@ export class FriendsController {
   async sendFriendRequest(
     @Request() req: any,
     @Param('username') username: string,
+    @CurrentUser() user: JwtPayload,
   ) {
     const userId = getUserId(req);
-    return this.friendsService.sendFriendRequest(userId, username);
+    return this.friendsService.sendFriendRequest(
+      userId,
+      username,
+      user.userType,
+    );
   }
 
   @Post('accept/:requesterId')

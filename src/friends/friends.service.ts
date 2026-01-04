@@ -33,9 +33,14 @@ export class FriendsService {
   async sendFriendRequest(
     requesterId: string,
     addresseeUsername: string,
+    requesterUserType?: string,
   ): Promise<Friend> {
     if (requesterId === addresseeUsername) {
       throw new BadRequestException(FriendErrorCode.CANNOT_FRIEND_SELF);
+    }
+
+    if (requesterUserType === 'author') {
+      throw new BadRequestException(FriendErrorCode.AUTHORS_CANNOT_FRIEND);
     }
 
     const addressee = await this.userRepository.findOne({

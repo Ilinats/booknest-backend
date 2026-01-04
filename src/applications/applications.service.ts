@@ -607,7 +607,7 @@ export class ApplicationsService {
       .leftJoinAndSelect('application.book', 'book')
       .leftJoinAndSelect('book.author', 'author')
       .leftJoinAndSelect('application.reader', 'reader')
-      .leftJoin('application.review', 'review')
+      .leftJoinAndSelect('application.review', 'review')
       .where('application.bookId = :bookId', { bookId });
 
     switch (sortBy) {

@@ -394,6 +394,30 @@ export class ApplicationsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Put(':applicationId/mark-received')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Mark copy as received (Authenticated - Reader only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Copy marked as received successfully',
+    type: Application,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - application not approved or not the applicant',
+  })
+  @ApiResponse({ status: 404, description: 'Application not found' })
+  markCopyReceived(
+    @CurrentUser('sub') readerId: string,
+    @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
+  ) {
+    return this.applicationsService.markCopyReceived(applicationId, readerId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Delete(':applicationId')
   @ApiBearerAuth()
   @ApiOperation({

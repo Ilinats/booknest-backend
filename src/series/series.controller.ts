@@ -36,20 +36,6 @@ export class SeriesController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserType.AUTHOR)
-  @Get('my')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: "Get current author's series" })
-  @ApiResponse({ status: 200, description: 'List of series', type: [Series] })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Author access required',
-  })
-  my(@CurrentUser('sub') authorId: string) {
-    return this.seriesService.listMine(authorId);
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserType.AUTHOR)
   @Post()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new series (Author only)' })
@@ -65,6 +51,20 @@ export class SeriesController {
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   create(@CurrentUser() user: JwtPayload, @Body() dto: CreateSeriesDto) {
     return this.seriesService.create(user.sub, user.userType as any, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Get('my')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get current author's series" })
+  @ApiResponse({ status: 200, description: 'List of series', type: [Series] })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  my(@CurrentUser('sub') authorId: string) {
+    return this.seriesService.listMine(authorId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

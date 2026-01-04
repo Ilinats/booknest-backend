@@ -45,46 +45,4 @@ export class DeviceTokenController {
     const userId = getUserId(req);
     return this.deviceTokenService.registerToken(userId, dto);
   }
-
-  @Get()
-  @ApiOperation({
-    summary: 'Get all device tokens for current user (Authenticated)',
-  })
-  @ApiResponse({ status: 200, description: 'List of device tokens' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async getMyTokens(@Request() req: any, @Query() dto: BasePaginationDto) {
-    const userId = getUserId(req);
-    return this.deviceTokenService.getAllUserTokens(userId, dto);
-  }
-
-  @Patch(':token')
-  @ApiOperation({ summary: 'Update a device token (Authenticated)' })
-  @ApiResponse({
-    status: 200,
-    description: 'Device token updated successfully',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async updateToken(
-    @Request() req: any,
-    @Param('token') token: string,
-    @Body() dto: UpdateDeviceTokenDto,
-  ) {
-    const userId = getUserId(req);
-    return this.deviceTokenService.updateToken(userId, token, dto);
-  }
-
-  @Delete(':token')
-  @ApiOperation({ summary: 'Delete a device token (Authenticated)' })
-  @ApiResponse({
-    status: 200,
-    description: 'Device token deleted successfully',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async deleteToken(@Request() req: any, @Param('token') token: string) {
-    const userId = getUserId(req);
-    await this.deviceTokenService.deleteToken(userId, token);
-    return { message: 'Device token deleted' };
-  }
 }

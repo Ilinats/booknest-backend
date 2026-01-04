@@ -69,64 +69,6 @@ export class UsersService {
     return this.usersRepository.save(user);
   }
 
-  async findAll(query?: {
-    search?: string;
-    skip?: number;
-    take?: number;
-    isActive?: boolean;
-  }): Promise<{
-    data: UserPublicResponseDto[];
-    total: number;
-    skip: number;
-    take: number;
-    hasMore: boolean;
-  }> {
-    const where: FindOptionsWhere<User>[] = [];
-
-    if (query?.search) {
-      const s = query.search.trim();
-      where.push({ username: ILike(`%${s}%`) });
-      where.push({ email: ILike(`%${s}%`) });
-      where.push({ firstName: ILike(`%${s}%`) });
-      where.push({ lastName: ILike(`%${s}%`) });
-    }
-
-    if (typeof query?.isActive === 'boolean') {
-      where.push({ isActive: query.isActive });
-    }
-
-    const skip = query?.skip ?? 0;
-    const take = Math.min(query?.take ?? 50, 100);
-
-    const [users, total] = await this.usersRepository.findAndCount({
-      where: where.length ? where : undefined,
-      skip,
-      take,
-      order: { createdAt: 'DESC' },
-    });
-
-    const data = users.map((user) => sanitizeUserPublic(user));
-    return createPaginatedResponse(data, total, skip, take);
-  }
-
-  async searchUsers(
-    search: string,
-    limit: number,
-  ): Promise<{
-    data: UserPublicResponseDto[];
-    total: number;
-    skip: number;
-    take: number;
-    hasMore: boolean;
-  }> {
-    return this.findAll({
-      search,
-      skip: 0,
-      take: limit,
-      isActive: true,
-    });
-  }
-
   async findOneById(id: string): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id } });
     if (!user) {

@@ -14,12 +14,4 @@ export class GenresController {
   findAll() {
     return this.genresService.findAll();
   }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get genre by ID' })
-  @ApiResponse({ status: 200, description: 'Genre details', type: Genre })
-  @ApiResponse({ status: 404, description: 'Genre not found' })
-  findOne(@Param('id', new ParseIntPipe()) id: number) {
-    return this.genresService.findOne(id);
-  }
 }

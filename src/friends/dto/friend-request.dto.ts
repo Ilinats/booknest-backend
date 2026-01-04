@@ -29,17 +29,3 @@ export class UnfriendDto {
   @IsNotEmpty()
   friendId: string;
 }
-
-export class BlockUserDto {
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  userId: string;
-}
-
-export class UnblockUserDto {
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  userId: string;
-}

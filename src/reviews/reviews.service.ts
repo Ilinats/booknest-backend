@@ -343,50 +343,6 @@ export class ReviewsService {
     return createPaginatedResponse(reviews, total, skip, take);
   }
 
-  async featureReview(reviewId: string, authorId: string, userType?: string) {
-    if (userType !== 'author') {
-      throw new ForbiddenException(ReviewErrorCode.AUTHOR_ACCESS_REQUIRED);
-    }
-
-    const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
-      relations: ['application', 'application.book'],
-    });
-
-    if (!review) {
-      throw new NotFoundException(ReviewErrorCode.REVIEW_NOT_FOUND);
-    }
-
-    if (review.application.book.authorId !== authorId) {
-      throw new ForbiddenException(ReviewErrorCode.ONLY_AUTHOR_CAN_FEATURE);
-    }
-
-    review.isFeatured = true;
-    return this.reviewRepo.save(review);
-  }
-
-  async unfeatureReview(reviewId: string, authorId: string, userType?: string) {
-    if (userType !== 'author') {
-      throw new ForbiddenException(ReviewErrorCode.AUTHOR_ACCESS_REQUIRED);
-    }
-
-    const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
-      relations: ['application', 'application.book'],
-    });
-
-    if (!review) {
-      throw new NotFoundException(ReviewErrorCode.REVIEW_NOT_FOUND);
-    }
-
-    if (review.application.book.authorId !== authorId) {
-      throw new ForbiddenException(ReviewErrorCode.ONLY_AUTHOR_CAN_FEATURE);
-    }
-
-    review.isFeatured = false;
-    return this.reviewRepo.save(review);
-  }
-
   async getAuthorLatestReviews(
     authorId: string,
     limit: number = 3,

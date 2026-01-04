@@ -44,66 +44,6 @@ import { Response } from 'express';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Get('check-username')
-  @ApiOperation({ summary: 'Check if username is available' })
-  @ApiQuery({
-    name: 'username',
-    required: true,
-    description: 'Username to check',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Username availability status',
-    schema: {
-      type: 'object',
-      properties: {
-        available: { type: 'boolean' },
-        message: { type: 'string' },
-      },
-    },
-  })
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  async checkUsername(@Query('username') username: string) {
-    return this.authService.checkUsernameAvailability(username);
-  }
-
-  @Get('check-email')
-  @ApiOperation({ summary: 'Check if email is available' })
-  @ApiQuery({
-    name: 'email',
-    required: true,
-    description: 'Email to check',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Email availability status',
-    schema: {
-      type: 'object',
-      properties: {
-        available: { type: 'boolean' },
-        message: { type: 'string' },
-      },
-    },
-  })
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  async checkEmail(@Query('email') email: string) {
-    return this.authService.checkEmailAvailability(email);
-  }
-
-  @Get('verification-status/:userId')
-  @ApiOperation({ summary: 'Get email verification status for a user' })
-  @ApiResponse({
-    status: 200,
-    description: 'Verification status',
-    type: VerificationStatusResponseDto,
-  })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  async getVerificationStatus(
-    @Param('userId') userId: string,
-  ): Promise<VerificationStatusResponseDto> {
-    return this.authService.getVerificationStatus(userId);
-  }
-
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
   @ApiBody({ type: RegisterDto })
@@ -173,20 +113,6 @@ export class AuthController {
     return this.authService.logout(refreshToken);
   }
 
-  @Post('logout-all')
-  @ApiOperation({ summary: 'Logout from all devices' })
-  @ApiBody({
-    schema: { type: 'object', properties: { userId: { type: 'string' } } },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Logged out from all devices',
-    type: LogoutResponseDto,
-  })
-  async logoutAll(@Body('userId') userId: string): Promise<LogoutResponseDto> {
-    return this.authService.logoutAll(userId);
-  }
-
   @Post('refresh-token')
   @ApiOperation({ summary: 'Refresh access token using refresh token' })
   @ApiResponse({
@@ -202,75 +128,6 @@ export class AuthController {
   ): Promise<RefreshTokenResponseDto> {
     const meta = { ip: res.req.ip, userAgent: res.req.headers['user-agent'] };
     return this.authService.refresh(dto, meta);
-  }
-
-  @Post('google')
-  @ApiOperation({ summary: 'Authenticate with Google OAuth (mobile app)' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        idToken: { type: 'string', description: 'Google ID token' },
-        userType: {
-          type: 'string',
-          enum: ['reader', 'author'],
-          description: 'User type (optional)',
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Google authentication successful',
-    type: AuthResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Google authentication failed' })
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async googleAuth(
-    @Body() body: { idToken: string; userType?: string },
-  ): Promise<AuthResponseDto> {
-    try {
-      const { OAuth2Client } = require('google-auth-library');
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-
-      if (!clientId) {
-        throw new Error('Google Client ID not configured');
-      }
-
-      const client = new OAuth2Client(clientId);
-
-      const ticket = await client.verifyIdToken({
-        idToken: body.idToken,
-        audience: clientId,
-      });
-
-      const payload = ticket.getPayload();
-
-      if (!payload) {
-        throw new Error('Invalid token payload');
-      }
-
-      const googleUser = {
-        googleId: payload.sub,
-        email: payload.email,
-        firstName: payload.given_name || '',
-        lastName: payload.family_name || '',
-        avatarUrl: payload.picture || null,
-      };
-
-      return await this.authService.googleAuth(
-        googleUser,
-        body.userType as UserType | undefined,
-      );
-    } catch (error: any) {
-      console.error('Google mobile auth error:', error);
-      const authError = AuthErrors[AuthErrorCode.GOOGLE_AUTH_FAILED];
-      throw new UnauthorizedException({
-        message: `Google authentication failed: ${error.message}`,
-        code: authError.code,
-      });
-    }
   }
 
   @Post('verify-email')
@@ -322,5 +179,65 @@ export class AuthController {
   @Throttle({ default: { limit: 3, ttl: 300000 } })
   async resendVerification(@Body() body: { email: string }) {
     return this.authService.resendVerificationCode(body.email);
+  }
+
+  @Get('check-username')
+  @ApiOperation({ summary: 'Check if username is available' })
+  @ApiQuery({
+    name: 'username',
+    required: true,
+    description: 'Username to check',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Username availability status',
+    schema: {
+      type: 'object',
+      properties: {
+        available: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+    },
+  })
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  async checkUsername(@Query('username') username: string) {
+    return this.authService.checkUsernameAvailability(username);
+  }
+
+  @Get('check-email')
+  @ApiOperation({ summary: 'Check if email is available' })
+  @ApiQuery({
+    name: 'email',
+    required: true,
+    description: 'Email to check',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Email availability status',
+    schema: {
+      type: 'object',
+      properties: {
+        available: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+    },
+  })
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  async checkEmail(@Query('email') email: string) {
+    return this.authService.checkEmailAvailability(email);
+  }
+
+  @Get('verification-status/:userId')
+  @ApiOperation({ summary: 'Get email verification status for a user' })
+  @ApiResponse({
+    status: 200,
+    description: 'Verification status',
+    type: VerificationStatusResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getVerificationStatus(
+    @Param('userId') userId: string,
+  ): Promise<VerificationStatusResponseDto> {
+    return this.authService.getVerificationStatus(userId);
   }
 }

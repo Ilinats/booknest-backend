@@ -87,12 +87,6 @@ export class AuthorFollowService {
     });
   }
 
-  async getAuthorFollowersCount(authorId: string): Promise<number> {
-    return this.authorFollowRepository.count({
-      where: { authorId },
-    });
-  }
-
   async isFollowing(followerId: string, authorId: string): Promise<boolean> {
     const follow = await this.authorFollowRepository.findOne({
       where: { followerId, authorId },
@@ -151,7 +145,8 @@ export class AuthorFollowService {
       .slice(0, limit);
 
     const sanitizedBooks = availableBooks.map((book) => {
-      const isAuthor = userType === UserType.AUTHOR && book.authorId === followerId;
+      const isAuthor =
+        userType === UserType.AUTHOR && book.authorId === followerId;
       if (!isAuthor) {
         const { fileUrl, fileSize, fileType, ...bookWithoutFiles } = book;
         return bookWithoutFiles as Book;
@@ -160,50 +155,5 @@ export class AuthorFollowService {
     });
 
     return sanitizedBooks;
-  }
-
-  async getFollowedAuthorsWithStats(followerId: string): Promise<
-    Array<{
-      author: User;
-      follow: AuthorFollow;
-      stats: {
-        totalBooks: number;
-        publishedBooks: number;
-        totalApplications: number;
-      };
-    }>
-  > {
-    const follows = await this.getFollowedAuthors(followerId);
-
-    if (follows.length === 0) {
-      return [];
-    }
-
-    const authorsWithStats = await Promise.all(
-      follows.map(async (follow) => {
-        const [totalBooks, publishedBooks, totalApplications] =
-          await Promise.all([
-            this.bookRepository.count({ where: { authorId: follow.authorId } }),
-            this.bookRepository.count({
-              where: { authorId: follow.authorId, status: BookStatus.ACTIVE },
-            }),
-            this.applicationRepository.count({
-              where: { book: { authorId: follow.authorId } },
-            }),
-          ]);
-
-        return {
-          author: follow.author!,
-          follow,
-          stats: {
-            totalBooks,
-            publishedBooks,
-            totalApplications,
-          },
-        };
-      }),
-    );
-
-    return authorsWithStats;
   }
 }

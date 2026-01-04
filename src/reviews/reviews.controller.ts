@@ -49,6 +49,39 @@ export class ReviewsController {
     return this.reviewsService.create(readerId, dto);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Get('author/latest')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get latest reviews across all books (Author only)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Number of reviews to return (default: 3)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of latest reviews across all author books',
+    type: [Review],
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  getAuthorLatestReviews(
+    @CurrentUser('sub') authorId: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.reviewsService.getAuthorLatestReviews(
+      authorId,
+      limit ? parseInt(limit.toString(), 10) : 3,
+    );
+  }
+
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':reviewId')
   @ApiOperation({
@@ -63,36 +96,6 @@ export class ReviewsController {
     @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
   ) {
     return this.reviewsService.findOne(reviewId, user?.sub, user?.userType);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Patch(':reviewId')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update a review (Authenticated)' })
-  @ApiResponse({ status: 200, description: 'Review updated successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Not your review' })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  update(
-    @CurrentUser() user: JwtPayload,
-    @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
-    @Body() dto: UpdateReviewDto & { isFeatured?: boolean },
-  ) {
-    return this.reviewsService.update(reviewId, user.sub, user.userType, dto);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Delete(':reviewId')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Delete a review (Authenticated)' })
-  @ApiResponse({ status: 200, description: 'Review deleted successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Not your review' })
-  remove(
-    @CurrentUser('sub') readerId: string,
-    @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
-  ) {
-    return this.reviewsService.remove(reviewId, readerId);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -158,37 +161,33 @@ export class ReviewsController {
   getFeaturedReviews(@Query() dto: BasePaginationDto) {
     return this.reviewsService.getFeaturedReviews(dto);
   }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserType.AUTHOR)
-  @Get('author/latest')
+  @UseGuards(JwtAuthGuard)
+  @Patch(':reviewId')
   @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Get latest reviews across all books (Author only)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Number of reviews to return (default: 3)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of latest reviews across all author books',
-    type: [Review],
-  })
+  @ApiOperation({ summary: 'Update a review (Authenticated)' })
+  @ApiResponse({ status: 200, description: 'Review updated successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Author access required',
-  })
-  getAuthorLatestReviews(
-    @CurrentUser('sub') authorId: string,
-    @Query('limit') limit?: number,
+  @ApiResponse({ status: 403, description: 'Forbidden - Not your review' })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  update(
+    @CurrentUser() user: JwtPayload,
+    @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
+    @Body() dto: UpdateReviewDto & { isFeatured?: boolean },
   ) {
-    return this.reviewsService.getAuthorLatestReviews(
-      authorId,
-      limit ? parseInt(limit.toString(), 10) : 3,
-    );
+    return this.reviewsService.update(reviewId, user.sub, user.userType, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':reviewId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete a review (Authenticated)' })
+  @ApiResponse({ status: 200, description: 'Review deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Not your review' })
+  remove(
+    @CurrentUser('sub') readerId: string,
+    @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
+  ) {
+    return this.reviewsService.remove(reviewId, readerId);
   }
 }

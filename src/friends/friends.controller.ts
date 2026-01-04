@@ -74,69 +74,6 @@ export class FriendsController {
     return this.friendsService.acceptFriendRequest(userId, requesterId);
   }
 
-  @Delete('decline/:requesterId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Decline a friend request (Authenticated)' })
-  @ApiResponse({ status: 204, description: 'Friend request declined' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async declineFriendRequest(
-    @Request() req: any,
-    @Param('requesterId') requesterId: string,
-  ) {
-    const userId = getUserId(req);
-    await this.friendsService.declineFriendRequest(userId, requesterId);
-  }
-
-  @Delete('unfriend/:friendId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Unfriend a user (Authenticated)' })
-  @ApiResponse({ status: 204, description: 'Unfriended successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async unfriend(@Request() req: any, @Param('friendId') friendId: string) {
-    const userId = getUserId(req);
-    await this.friendsService.unfriend(userId, friendId);
-  }
-
-  @Get('count')
-  @ApiOperation({ summary: 'Get friends count (Authenticated)' })
-  @ApiResponse({
-    status: 200,
-    description: 'Number of friends',
-    schema: {
-      type: 'object',
-      properties: {
-        count: { type: 'number' },
-      },
-    },
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getFriendsCount(@Request() req: any) {
-    const userId = getUserId(req);
-    const count = await this.friendsService.getFriendsCount(userId);
-    return { count };
-  }
-
-  @Get('requests/received/count')
-  @ApiOperation({
-    summary: 'Get received friend requests count (Authenticated)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Number of received friend requests',
-    schema: {
-      type: 'object',
-      properties: {
-        count: { type: 'number' },
-      },
-    },
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getReceivedRequestsCount(@Request() req: any) {
-    const userId = getUserId(req);
-    const count = await this.friendsService.getReceivedRequestsCount(userId);
-    return { count };
-  }
-
   @Get()
   @ApiOperation({ summary: 'Get friends list (Authenticated)' })
   @ApiQuery({
@@ -230,40 +167,6 @@ export class FriendsController {
     );
   }
 
-  @Get('suggestions')
-  @ApiOperation({
-    summary:
-      'Get friend suggestions based on reading preferences (Authenticated)',
-    description:
-      'Returns users with similar genre preferences who are not already friends',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Maximum number of suggestions (default: 10)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of suggested users',
-    schema: {
-      type: 'array',
-      items: { $ref: '#/components/schemas/UserPublicResponseDto' },
-    },
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getFriendSuggestions(
-    @Request() req: any,
-    @Query('limit') limit?: number,
-  ) {
-    const userId = getUserId(req);
-    const limitNum = limit ? parseInt(limit.toString(), 10) : 10;
-    return this.friendsService.getFriendSuggestions(
-      userId,
-      limitNum > 0 ? limitNum : 10,
-    );
-  }
-
   @Get('requests/sent')
   @ApiOperation({
     summary: 'Get sent friend requests as user list (Authenticated)',
@@ -346,6 +249,29 @@ export class FriendsController {
       limit,
       user.userType as UserType,
     );
+  }
+
+  @Delete('decline/:requesterId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Decline a friend request (Authenticated)' })
+  @ApiResponse({ status: 204, description: 'Friend request declined' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async declineFriendRequest(
+    @Request() req: any,
+    @Param('requesterId') requesterId: string,
+  ) {
+    const userId = getUserId(req);
+    await this.friendsService.declineFriendRequest(userId, requesterId);
+  }
+
+  @Delete('unfriend/:friendId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Unfriend a user (Authenticated)' })
+  @ApiResponse({ status: 204, description: 'Unfriended successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async unfriend(@Request() req: any, @Param('friendId') friendId: string) {
+    const userId = getUserId(req);
+    await this.friendsService.unfriend(userId, friendId);
   }
 
   @Delete('cancel/:addresseeId')

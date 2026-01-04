@@ -2,7 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch,
   Delete,
   Body,
   Query,
@@ -41,6 +41,18 @@ export class UserProfileController {
     private readonly userActivityService: UserActivityService,
     private readonly userAddressService: UserAddressService,
   ) {}
+
+  @Post('me/addresses')
+  @ApiOperation({
+    summary: 'Create a new address (Authenticated)',
+  })
+  @ApiResponse({ status: 201, description: 'Address created successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async createAddress(@Request() req: any, @Body() dto: CreateAddressDto) {
+    const userId = getUserId(req);
+    return this.userAddressService.create(userId, dto);
+  }
 
   @Get('user/:usernameOrId')
   @ApiOperation({
@@ -146,19 +158,7 @@ export class UserProfileController {
     );
   }
 
-  @Post('me/addresses')
-  @ApiOperation({
-    summary: 'Create a new address (Authenticated)',
-  })
-  @ApiResponse({ status: 201, description: 'Address created successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async createAddress(@Request() req: any, @Body() dto: CreateAddressDto) {
-    const userId = getUserId(req);
-    return this.userAddressService.create(userId, dto);
-  }
-
-  @Put('me/addresses/:addressId')
+  @Patch('me/addresses/:addressId')
   @ApiOperation({
     summary: 'Update an address (Authenticated)',
   })
@@ -175,23 +175,7 @@ export class UserProfileController {
     return this.userAddressService.update(userId, addressId, dto);
   }
 
-  @Delete('me/addresses/:addressId')
-  @ApiOperation({
-    summary: 'Delete an address (Authenticated)',
-  })
-  @ApiResponse({ status: 200, description: 'Address deleted successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 404, description: 'Address not found' })
-  async deleteAddress(
-    @Request() req: any,
-    @Param('addressId', ParseUUIDPipe) addressId: string,
-  ) {
-    const userId = getUserId(req);
-    await this.userAddressService.remove(userId, addressId);
-    return { message: 'Address deleted successfully' };
-  }
-
-  @Put('me/social-media')
+  @Patch('me/social-media')
   @ApiOperation({
     summary: 'Update social media links (Authenticated)',
   })
@@ -217,7 +201,7 @@ export class UserProfileController {
     return this.userProfileService.updateSocialMedia(userId, socialMedia);
   }
 
-  @Put('me/privacy')
+  @Patch('me/privacy')
   @ApiOperation({
     summary: 'Update privacy settings (Authenticated)',
   })
@@ -235,7 +219,7 @@ export class UserProfileController {
     return this.userProfileService.updatePrivacySettings(userId, dto);
   }
 
-  @Put('me/notifications')
+  @Patch('me/notifications')
   @ApiOperation({
     summary: 'Update notification settings (Authenticated)',
   })
@@ -255,5 +239,21 @@ export class UserProfileController {
       emailNotifications: dto.emailNotifications,
       notificationPreferences: dto.notificationPreferences,
     });
+  }
+
+  @Delete('me/addresses/:addressId')
+  @ApiOperation({
+    summary: 'Delete an address (Authenticated)',
+  })
+  @ApiResponse({ status: 200, description: 'Address deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Address not found' })
+  async deleteAddress(
+    @Request() req: any,
+    @Param('addressId', ParseUUIDPipe) addressId: string,
+  ) {
+    const userId = getUserId(req);
+    await this.userAddressService.remove(userId, addressId);
+    return { message: 'Address deleted successfully' };
   }
 }

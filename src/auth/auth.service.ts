@@ -199,14 +199,6 @@ export class AuthService {
     return { message: 'Logged out' };
   }
 
-  async logoutAll(userId: string): Promise<LogoutResponseDto> {
-    await this.refreshTokenRepository.update(
-      { userId },
-      { revokedAt: new Date() },
-    );
-    return { message: 'Logged out from all devices' };
-  }
-
   async refresh(
     dto: RefreshTokenDto,
     meta?: { ip?: string; userAgent?: string; deviceName?: string },
@@ -306,86 +298,6 @@ export class AuthService {
       emailVerified: user.emailVerified,
       isActive: user.isActive,
     };
-  }
-
-  async googleAuth(googleUser: any, userType?: UserType) {
-    const { googleId, email, firstName, lastName, avatarUrl } = googleUser;
-
-    console.log('Google Auth - Input:', {
-      googleId,
-      email,
-      firstName,
-      lastName,
-      avatarUrl,
-      userType,
-    });
-
-    let user = await this.usersRepository.findOne({
-      where: [{ googleId }, { email: email.toLowerCase() }],
-    });
-
-    console.log('Google Auth - Found existing user:', user ? user.id : 'none');
-
-    if (user) {
-      if (!user.googleId) {
-        user.googleId = googleId;
-        user = await this.usersRepository.save(user);
-        console.log('Google Auth - Updated existing user with Google ID');
-      }
-    } else {
-      const finalUserType = userType || UserType.READER;
-      const username = await this.generateUniqueUsername(email);
-      console.log('Google Auth - Generated username:', username);
-
-      user = this.usersRepository.create({
-        googleId,
-        email: email.toLowerCase(),
-        username,
-        firstName,
-        lastName,
-        userType: finalUserType,
-        avatarUrl: avatarUrl || null,
-        emailVerified: true,
-        isActive: true,
-      });
-
-      console.log('Google Auth - Created user object:', user);
-      user = await this.usersRepository.save(user);
-      console.log('Google Auth - Saved user to database:', user.id);
-    }
-
-    console.log('Google Auth - Updating last login for user:', user.id);
-    await this.updateLastLogin(user.id);
-
-    console.log('Google Auth - Issuing tokens for user:', user.id);
-    const { accessToken, refreshToken } = await this.issueTokensStateful(
-      user.id,
-      user.username || user.email,
-      user.email,
-      user.userType,
-    );
-
-    console.log('Google Auth - Successfully completed for user:', user.id);
-    return {
-      accessToken,
-      refreshToken,
-    };
-  }
-
-  private async generateUniqueUsername(email: string): Promise<string> {
-    const baseUsername = email
-      .split('@')[0]
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
-    let username = baseUsername;
-    let counter = 1;
-
-    while (await this.usersRepository.findOne({ where: { username } })) {
-      username = `${baseUsername}${counter}`;
-      counter++;
-    }
-
-    return username;
   }
 
   async resendVerification(email: string): Promise<MessageResponseDto> {
@@ -502,27 +414,6 @@ export class AuthService {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  private async issueTokens(
-    userId: string,
-    username: string,
-    email: string,
-    userType: 'reader' | 'author',
-  ) {
-    const payload = { sub: userId, username, email, userType };
-    const accessToken = await this.jwtService.signAsync(payload);
-    const refreshSecret =
-      this.configService.get<string>('JWT_REFRESH_SECRET') ??
-      (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') +
-        '_refresh';
-    const refreshExpiresIn =
-      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
-    const refreshToken = await this.jwtService.signAsync(payload, {
-      secret: refreshSecret,
-      expiresIn: refreshExpiresIn,
-    });
-    return { accessToken, refreshToken };
-  }
-
   private async verifyPassword(
     emailOrUsername: string,
     password: string,
@@ -577,43 +468,6 @@ export class AuthService {
     await this.usersRepository.update(
       { id: userId },
       { passwordResetToken: token, passwordResetExpires: expiresAt },
-    );
-  }
-
-  private async resetPasswordByToken(
-    token: string,
-    newPassword: string,
-  ): Promise<void> {
-    const user = await this.usersRepository
-      .createQueryBuilder('user')
-      .addSelect('user.passwordResetToken')
-      .addSelect('user.passwordResetExpires')
-      .where('user.passwordResetToken = :token', { token })
-      .getOne();
-
-    if (
-      !user ||
-      !user.passwordResetExpires ||
-      user.passwordResetExpires.getTime() < Date.now()
-    ) {
-      const error = AuthErrors[AuthErrorCode.PASSWORD_RESET_TOKEN_EXPIRED];
-      throw new BadRequestException({
-        message: error.message,
-        code: error.code,
-      });
-    }
-
-    const passwordHash = await argon2.hash(newPassword, {
-      type: argon2.argon2id,
-    });
-
-    await this.usersRepository.update(
-      { id: user.id },
-      {
-        passwordHash,
-        passwordResetToken: null,
-        passwordResetExpires: null,
-      },
     );
   }
 

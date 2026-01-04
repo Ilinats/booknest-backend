@@ -7,7 +7,6 @@ import {
   ParseUUIDPipe,
   Post,
   Patch,
-  Put,
   Query,
   UseGuards,
   UsePipes,
@@ -31,7 +30,6 @@ import { UserType } from '../users/enums';
 import {
   CreateApplicationDto,
   BulkActionDto,
-  ShippingApplicationDto,
   BulkMarkSentDto,
   UpdateApplicationCompleteDto,
   FindApplicationsDto,
@@ -221,35 +219,6 @@ export class ApplicationsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserType.AUTHOR)
-  @Get('books/:bookId/shipping')
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary:
-      'Get shipping information for approved applications (Author only, physical/both books only)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of approved applications with addresses',
-    type: ShippingApplicationDto,
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Author access required',
-  })
-  getShippingInfo(
-    @CurrentUser() user: JwtPayload,
-    @Param('bookId', new ParseUUIDPipe()) bookId: string,
-  ) {
-    return this.applicationsService.getShippingInfo(
-      bookId,
-      user.sub,
-      user.userType,
-    );
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserType.AUTHOR)
   @Get('books/:bookId')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all applications for a book (Author only)' })
@@ -334,7 +303,7 @@ export class ApplicationsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Put(':applicationId/reading-status')
+  @Patch(':applicationId/reading-status')
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Update reading status (Authenticated - Reader only)',
@@ -365,7 +334,7 @@ export class ApplicationsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserType.AUTHOR)
-  @Put(':applicationId/mark-sent')
+  @Patch(':applicationId/mark-sent')
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Mark copy as sent (Author only)',
@@ -394,7 +363,7 @@ export class ApplicationsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Put(':applicationId/mark-received')
+  @Patch(':applicationId/mark-received')
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Mark copy as received (Authenticated - Reader only)',
@@ -414,7 +383,10 @@ export class ApplicationsController {
     @CurrentUser('sub') readerId: string,
     @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
   ) {
-    return this.applicationsService.markCopyReceived(applicationId, readerId);
+    return this.applicationsService.markCopyReceived(
+      applicationId,
+      readerId,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

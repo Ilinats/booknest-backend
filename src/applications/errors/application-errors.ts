@@ -16,6 +16,8 @@ export enum ApplicationErrorCode {
   APPLICATION_NO_AVAILABLE_COPIES = 'APPLICATION_NO_AVAILABLE_COPIES',
   APPLICATION_DEADLINE_PASSED = 'APPLICATION_DEADLINE_PASSED',
   APPLICATION_AGE_RESTRICTION_VIOLATION = 'APPLICATION_AGE_RESTRICTION_VIOLATION',
+  APPLICATION_READER_ID_REQUIRED = 'APPLICATION_READER_ID_REQUIRED',
+  APPLICATION_CANNOT_MANAGE_LOTTERY = 'APPLICATION_CANNOT_MANAGE_LOTTERY',
 }
 
 export const ApplicationErrors: Record<ApplicationErrorCode, AppError> = {
@@ -94,6 +96,17 @@ export const ApplicationErrors: Record<ApplicationErrorCode, AppError> = {
   [ApplicationErrorCode.APPLICATION_AGE_RESTRICTION_VIOLATION]: {
     code: ApplicationErrorCode.APPLICATION_AGE_RESTRICTION_VIOLATION,
     message: 'You do not meet the age requirement to apply for this book',
+    statusCode: 400,
+  },
+  [ApplicationErrorCode.APPLICATION_READER_ID_REQUIRED]: {
+    code: ApplicationErrorCode.APPLICATION_READER_ID_REQUIRED,
+    message: 'Reader ID is required',
+    statusCode: 400,
+  },
+  [ApplicationErrorCode.APPLICATION_CANNOT_MANAGE_LOTTERY]: {
+    code: ApplicationErrorCode.APPLICATION_CANNOT_MANAGE_LOTTERY,
+    message:
+      'Cannot manually approve or reject applications for books with lottery selection. Please use the run-lottery endpoint after the application deadline.',
     statusCode: 400,
   },
 };

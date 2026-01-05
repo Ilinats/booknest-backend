@@ -131,7 +131,12 @@ export class OwnershipGuard implements CanActivate {
         break;
 
       default:
-        throw new ForbiddenException('Invalid ownership resource type');
+        const error =
+          AuthErrors[AuthErrorCode.INVALID_OWNERSHIP_RESOURCE_TYPE];
+        throw new ForbiddenException({
+          message: error.message,
+          code: error.code,
+        });
     }
 
     if (!isOwner) {

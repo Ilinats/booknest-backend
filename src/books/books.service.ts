@@ -110,9 +110,11 @@ export class BooksService {
       if (genres.length !== genreIds.length) {
         const foundIds = genres.map((g) => g.id);
         const missing = genreIds.filter((id) => !foundIds.includes(id));
-        throw new BadRequestException(
-          `Invalid genre IDs: ${missing.join(', ')}`,
-        );
+        const error = BookErrors[BookErrorCode.BOOK_INVALID_GENRE_IDS];
+        throw new BadRequestException({
+          message: `${error.message}: ${missing.join(', ')}`,
+          code: error.code,
+        });
       }
       const bgs = genreIds.map((genreId) =>
         this.bookGenreRepo.create({ bookId: saved.id, genreId }),
@@ -378,9 +380,11 @@ export class BooksService {
         if (genres.length !== genreIds.length) {
           const foundIds = genres.map((g) => g.id);
           const missing = genreIds.filter((id) => !foundIds.includes(id));
-          throw new BadRequestException(
-            `Invalid genre IDs: ${missing.join(', ')}`,
-          );
+          const error = BookErrors[BookErrorCode.BOOK_INVALID_GENRE_IDS];
+          throw new BadRequestException({
+            message: `${error.message}: ${missing.join(', ')}`,
+            code: error.code,
+          });
         }
         const bgs = genreIds.map((genreId) =>
           this.bookGenreRepo.create({ bookId, genreId }),

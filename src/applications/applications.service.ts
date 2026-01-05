@@ -206,7 +206,12 @@ export class ApplicationsService {
 
   async findMyApplications(readerId: string, dto: FindApplicationsDto) {
     if (!readerId) {
-      throw new BadRequestException('Reader ID is required');
+      const error =
+        ApplicationErrors[ApplicationErrorCode.APPLICATION_READER_ID_REQUIRED];
+      throw new BadRequestException({
+        message: error.message,
+        code: error.code,
+      });
     }
 
     const skip = dto.skip ?? 0;
@@ -444,9 +449,14 @@ export class ApplicationsService {
         });
       }
       if (application.book.selectionMethod === SelectionMethod.LOTTERY) {
-        throw new BadRequestException(
-          'Cannot manually approve or reject applications for books with lottery selection. Please use the run-lottery endpoint after the application deadline.',
-        );
+        const error =
+          ApplicationErrors[
+            ApplicationErrorCode.APPLICATION_CANNOT_MANAGE_LOTTERY
+          ];
+        throw new BadRequestException({
+          message: error.message,
+          code: error.code,
+        });
       }
       application.status = dto.status;
       application.authorNotes = dto.authorNotes ?? application.authorNotes;
@@ -806,9 +816,12 @@ export class ApplicationsService {
     }
 
     if (book.selectionMethod === SelectionMethod.LOTTERY) {
-      throw new BadRequestException(
-        'Cannot manually approve or reject applications for books with lottery selection. Please use the run-lottery endpoint after the application deadline.',
-      );
+      const error =
+        ApplicationErrors[ApplicationErrorCode.APPLICATION_CANNOT_MANAGE_LOTTERY];
+      throw new BadRequestException({
+        message: error.message,
+        code: error.code,
+      });
     }
 
     if (!dto || !dto.applicationIds || dto.applicationIds.length === 0) {

@@ -8,6 +8,10 @@ import { Repository, Not } from 'typeorm';
 import { UserAddress } from './entity/user-address.entity';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
+import {
+  UserAddressErrorCode,
+  UserAddressErrors,
+} from './errors/user-address-errors';
 
 @Injectable()
 export class UserAddressService {
@@ -46,7 +50,11 @@ export class UserAddressService {
     });
 
     if (!address) {
-      throw new NotFoundException('Address not found or access denied');
+      const error = UserAddressErrors[UserAddressErrorCode.ADDRESS_ACCESS_DENIED];
+      throw new NotFoundException({
+        message: error.message,
+        code: error.code,
+      });
     }
 
     if (updateAddressDto.isPrimary === true) {
@@ -104,7 +112,11 @@ export class UserAddressService {
     });
 
     if (result.affected === 0) {
-      throw new Error('Address not found or access denied');
+      const error = UserAddressErrors[UserAddressErrorCode.ADDRESS_ACCESS_DENIED];
+      throw new NotFoundException({
+        message: error.message,
+        code: error.code,
+      });
     }
   }
 }

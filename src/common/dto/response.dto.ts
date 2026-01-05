@@ -27,3 +27,4 @@ export class PaginatedResponseDto<TItem = any> extends BaseResponseDto<
   @ApiProperty({ example: true })
   hasMore!: boolean;
 }
+

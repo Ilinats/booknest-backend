@@ -14,6 +14,7 @@ export enum BookErrorCode {
   BOOK_ALREADY_PUBLISHED = 'BOOK_ALREADY_PUBLISHED',
   BOOK_FILE_NOT_AVAILABLE = 'BOOK_FILE_NOT_AVAILABLE',
   AUTHOR_ACCESS_REQUIRED = 'AUTHOR_ACCESS_REQUIRED',
+  BOOK_INVALID_GENRE_IDS = 'BOOK_INVALID_GENRE_IDS',
 }
 
 export const BookErrors: Record<BookErrorCode, AppError> = {
@@ -81,5 +82,10 @@ export const BookErrors: Record<BookErrorCode, AppError> = {
     code: BookErrorCode.AUTHOR_ACCESS_REQUIRED,
     message: 'Author access required',
     statusCode: 403,
+  },
+  [BookErrorCode.BOOK_INVALID_GENRE_IDS]: {
+    code: BookErrorCode.BOOK_INVALID_GENRE_IDS,
+    message: 'Invalid genre IDs provided',
+    statusCode: 400,
   },
 };

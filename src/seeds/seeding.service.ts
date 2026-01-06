@@ -764,7 +764,6 @@ export class SeedingService {
           "Absolutely loved this book! The world-building was incredible and the characters were well-developed. The magical forest setting was described beautifully, and I couldn't put it down. Highly recommend!",
         wordCount: 45,
         isPublic: true,
-        isFeatured: true,
       },
     ];
 
@@ -783,7 +782,6 @@ export class SeedingService {
         reviewContent: reviewInfo.reviewContent,
         wordCount: reviewInfo.wordCount,
         isPublic: reviewInfo.isPublic,
-        isFeatured: reviewInfo.isFeatured,
       });
 
       await this.reviewRepository.save(review);

@@ -15,7 +15,7 @@ import { Book } from '../books/entity/book.entity';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { FindReviewsDto } from './dto/find-reviews.dto';
-import { BasePaginationDto, createPaginatedResponse } from '../common';
+import { createPaginatedResponse } from '../common';
 import { ReadingStatus, ApplicationStatus } from '../applications/enums';
 import { UserType } from '../users/enums';
 import { ReviewErrorCode } from './errors';
@@ -164,7 +164,7 @@ export class ReviewsService {
     reviewId: string,
     userId: string,
     userType: UserType | undefined,
-    dto: UpdateReviewDto & { isFeatured?: boolean },
+    dto: UpdateReviewDto,
   ) {
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId },
@@ -203,13 +203,6 @@ export class ReviewsService {
       review.reviewUrls = dto.reviewUrls ?? review.reviewUrls;
       review.isPublic = dto.isPublic ?? review.isPublic;
       review.wordCount = wordCount;
-    }
-
-    if (dto.isFeatured !== undefined) {
-      if (!isAuthor) {
-        throw new ForbiddenException(ReviewErrorCode.ONLY_AUTHOR_CAN_FEATURE);
-      }
-      review.isFeatured = dto.isFeatured;
     }
 
     return this.reviewRepo.save(review);
@@ -326,21 +319,6 @@ export class ReviewsService {
     });
 
     return createPaginatedResponse(sanitizedReviews, total, skip, take);
-  }
-
-  async getFeaturedReviews(dto: BasePaginationDto) {
-    const skip = dto.skip ?? 0;
-    const take = dto.take ?? 20;
-
-    const [reviews, total] = await this.reviewRepo.findAndCount({
-      where: { isFeatured: true, isPublic: true },
-      relations: ['application', 'application.reader', 'application.book'],
-      order: { createdAt: 'DESC' },
-      skip,
-      take,
-    });
-
-    return createPaginatedResponse(reviews, total, skip, take);
   }
 
   async getAuthorLatestReviews(

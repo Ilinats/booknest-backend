@@ -8,7 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { User } from '../../users/entity/user.entity';
-import { VerificationType } from '../enums';
+import { VerificationTypeEnum } from '../enums';
 
 @Entity({ name: 'verification_codes' })
 export class VerificationCode {
@@ -30,9 +30,9 @@ export class VerificationCode {
   @Column({
     name: 'type',
     type: 'enum',
-    enum: ['email_verification', 'password_reset'],
+    enum: VerificationTypeEnum,
   })
-  type!: VerificationType;
+  type!: VerificationTypeEnum;
 
   @Column({ name: 'is_used', type: 'boolean', default: false })
   isUsed!: boolean;

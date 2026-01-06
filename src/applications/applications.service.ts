@@ -17,7 +17,7 @@ import { User } from '../users/entity/user.entity';
 import { UserAddress } from '../user-address/entity/user-address.entity';
 import { Review } from '../reviews/entity/review.entity';
 import { ApplicationStatus, ReadingStatus } from './enums';
-import { SelectionMethod, AgeRating } from '../books/enums';
+import { SelectionMethod, AgeRating, BookStatus } from '../books/enums';
 import {
   CreateApplicationDto,
   ApplicationStatusDto,
@@ -145,6 +145,11 @@ export class ApplicationsService {
       initialStatus = ApplicationStatus.APPROVED;
       respondedAt = now;
       book.availableCopies -= 1;
+      
+      if (book.availableCopies === 0 && book.status === BookStatus.ACTIVE) {
+        book.status = BookStatus.IN_PROGRESS;
+      }
+      
       await this.bookRepo.save(book);
       if (book.distributionType === 'digital') {
         copySentAt = now;
@@ -728,6 +733,15 @@ export class ApplicationsService {
         'availableCopies',
         1,
       );
+      
+      const updatedBook = await this.bookRepo.findOne({
+        where: { id: application.bookId },
+      });
+      if (updatedBook && updatedBook.availableCopies === 0 && updatedBook.status === BookStatus.ACTIVE) {
+        updatedBook.status = BookStatus.IN_PROGRESS;
+        await this.bookRepo.save(updatedBook);
+      }
+      
       if (application.book.distributionType === 'digital') {
         application.copySentAt = new Date();
       }
@@ -860,6 +874,13 @@ export class ApplicationsService {
         'availableCopies',
         updatedApplications.length,
       );
+      
+      const updatedBook = await this.bookRepo.findOne({ where: { id: bookId } });
+      if (updatedBook && updatedBook.availableCopies === 0 && updatedBook.status === BookStatus.ACTIVE) {
+        updatedBook.status = BookStatus.IN_PROGRESS;
+        await this.bookRepo.save(updatedBook);
+      }
+      
       const now = new Date();
       updatedApplications.forEach((app) => {
         if (book.distributionType === 'digital') {
@@ -1234,6 +1255,11 @@ export class ApplicationsService {
       );
 
       book.availableCopies -= winners.length;
+      
+      if (book.availableCopies === 0 && book.status === BookStatus.ACTIVE) {
+        book.status = BookStatus.IN_PROGRESS;
+      }
+      
       await this.bookRepo.save(book);
 
       if (this.notificationService) {

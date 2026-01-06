@@ -28,3 +28,5 @@ export class PaginatedResponseDto<TItem = any> extends BaseResponseDto<
   hasMore!: boolean;
 }
 
+
+

@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsBoolean, IsObject } from 'class-validator';
+import { IsOptional, IsBoolean, IsEnum, IsArray } from 'class-validator';
+import { NotificationTypeEnum } from '../../notifications/enums/notification-type.enum';
 
 export class UpdateNotificationSettingsDto {
   @ApiPropertyOptional()
@@ -12,15 +13,13 @@ export class UpdateNotificationSettingsDto {
   @IsBoolean()
   emailNotifications?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Array of enabled notification types',
+    enum: NotificationTypeEnum,
+    isArray: true,
+  })
   @IsOptional()
-  @IsObject()
-  notificationPreferences?: {
-    friendRequests?: boolean;
-    friendRequestAccepted?: boolean;
-    applicationApproved?: boolean;
-    applicationRejected?: boolean;
-    reviewDeadlineReminders?: boolean;
-    authorBookPublished?: boolean;
-  } | null;
+  @IsArray()
+  @IsEnum(NotificationTypeEnum, { each: true })
+  notificationPreferences?: NotificationTypeEnum[] | null;
 }

@@ -113,7 +113,7 @@ export class InitialSchema1765902226528 implements MigrationInterface {
       `CREATE TYPE "public"."reviews_review_type_enum" AS ENUM('link', 'text')`,
     );
     await queryRunner.query(
-      `CREATE TABLE "reviews" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "application_id" uuid NOT NULL, "rating" integer NOT NULL, "review_type" "public"."reviews_review_type_enum" NOT NULL, "review_content" text, "review_urls" text array, "is_public" boolean NOT NULL DEFAULT true, "is_featured" boolean NOT NULL DEFAULT false, "word_count" integer, "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_231ae565c273ee700b283f15c1d" PRIMARY KEY ("id"))`,
+      `CREATE TABLE "reviews" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "application_id" uuid NOT NULL, "rating" decimal(3,2) NOT NULL, "review_type" "public"."reviews_review_type_enum" NOT NULL, "review_content" text, "review_urls" text array, "is_public" boolean NOT NULL DEFAULT true, "is_featured" boolean NOT NULL DEFAULT false, "word_count" integer, "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_231ae565c273ee700b283f15c1d" PRIMARY KEY ("id"))`,
     );
     await queryRunner.query(
       `CREATE INDEX "IDX_414daf69b1c74f190324c9069a" ON "reviews" ("application_id") `,

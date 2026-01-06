@@ -41,13 +41,4 @@ export class RefreshToken {
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt!: Date;
-
-  @Column({ name: 'ip', type: 'varchar', length: 100, nullable: true })
-  ip?: string | null;
-
-  @Column({ name: 'user_agent', type: 'varchar', length: 500, nullable: true })
-  userAgent?: string | null;
-
-  @Column({ name: 'device_name', type: 'varchar', length: 200, nullable: true })
-  deviceName?: string | null;
 }

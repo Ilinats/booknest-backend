@@ -4,4 +4,3 @@ export enum AuthorBookSortBy {
   STATUS = 'status',
   APPLICATION_COUNT = 'application_count',
 }
-

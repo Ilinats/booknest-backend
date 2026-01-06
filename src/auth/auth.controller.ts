@@ -63,11 +63,6 @@ export class AuthController {
   @Post('login')
   @ApiOperation({ summary: 'Login with email/username and password' })
   @ApiQuery({
-    name: 'deviceName',
-    required: false,
-    description: 'Device name for token tracking',
-  })
-  @ApiQuery({
     name: 'persist',
     required: false,
     description: 'Whether to persist session',
@@ -83,15 +78,9 @@ export class AuthController {
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
-    @Query('deviceName') deviceName?: string,
     @Query('persist') persist?: string,
   ): Promise<LoginResponseDto> {
-    const meta = {
-      ip: res.req.ip,
-      userAgent: res.req.headers['user-agent'],
-      deviceName,
-    };
-    return this.authService.login(dto, meta);
+    return this.authService.login(dto);
   }
 
   @Post('logout')
@@ -124,10 +113,8 @@ export class AuthController {
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async refresh(
     @Body() dto: RefreshTokenDto,
-    @Res({ passthrough: true }) res: Response,
   ): Promise<RefreshTokenResponseDto> {
-    const meta = { ip: res.req.ip, userAgent: res.req.headers['user-agent'] };
-    return this.authService.refresh(dto, meta);
+    return this.authService.refresh(dto);
   }
 
   @Post('verify-email')

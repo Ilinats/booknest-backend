@@ -34,23 +34,9 @@ export class NotificationService {
       return null;
     }
 
-    const preferences = profile.notificationPreferences || {};
-    const typePreferenceMap: Record<
-      NotificationTypeEnum,
-      keyof typeof preferences
-    > = {
-      [NotificationTypeEnum.FRIEND_REQUEST_RECEIVED]: 'friendRequests',
-      [NotificationTypeEnum.FRIEND_REQUEST_ACCEPTED]: 'friendRequestAccepted',
-      [NotificationTypeEnum.FRIEND_REQUEST_DECLINED]: 'friendRequestAccepted',
-      [NotificationTypeEnum.APPLICATION_APPROVED]: 'applicationApproved',
-      [NotificationTypeEnum.APPLICATION_REJECTED]: 'applicationRejected',
-      [NotificationTypeEnum.REVIEW_DEADLINE_REMINDER]:
-        'reviewDeadlineReminders',
-      [NotificationTypeEnum.AUTHOR_BOOK_PUBLISHED]: 'authorBookPublished',
-    };
+    const preferences = profile.notificationPreferences || [];
 
-    const preferenceKey = typePreferenceMap[type];
-    if (preferenceKey && preferences[preferenceKey] === false) {
+    if (preferences.length > 0 && !preferences.includes(type)) {
       this.logger.log(
         `Notification type ${type} disabled for user ${userId}, skipping`,
       );

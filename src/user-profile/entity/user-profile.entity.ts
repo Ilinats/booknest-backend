@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entity/user.entity';
 import { PrivacyLevel } from '../enums';
+import { NotificationTypeEnum } from '../../notifications/enums/notification-type.enum';
 
 @Entity({ name: 'user_profiles' })
 export class UserProfile {
@@ -68,15 +69,14 @@ export class UserProfile {
   @Column({ name: 'email_notifications', type: 'boolean', default: true })
   emailNotifications!: boolean;
 
-  @Column({ name: 'notification_preferences', type: 'jsonb', nullable: true })
-  notificationPreferences?: {
-    friendRequests?: boolean;
-    friendRequestAccepted?: boolean;
-    applicationApproved?: boolean;
-    applicationRejected?: boolean;
-    reviewDeadlineReminders?: boolean;
-    authorBookPublished?: boolean;
-  } | null;
+  @Column({
+    name: 'notification_preferences',
+    type: 'enum',
+    enum: NotificationTypeEnum,
+    array: true,
+    nullable: true,
+  })
+  notificationPreferences?: NotificationTypeEnum[] | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt!: Date;

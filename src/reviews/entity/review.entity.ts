@@ -24,7 +24,7 @@ export class Review {
   @Column({ name: 'application_id', type: 'uuid' })
   applicationId!: string;
 
-  @Column({ name: 'rating', type: 'int' })
+  @Column({ name: 'rating', type: 'decimal', precision: 3, scale: 2 })
   rating!: number;
 
   @Column({ name: 'review_type', type: 'enum', enum: ReviewType })

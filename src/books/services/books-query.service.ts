@@ -64,11 +64,11 @@ export class BooksQueryService {
       LEFT JOIN reviews r ON r.application_id IN (
         SELECT a.id FROM applications a WHERE a.book_id = b.id
       )
-      WHERE b.status = $1
+      WHERE ${normalizedDto.status ? 'b.status = $1' : "b.status IN ('active', 'in_progress', 'completed')"}
     `;
 
-    const queryParams: unknown[] = [normalizedDto.status ?? 'active'];
-    let paramIndex = 2;
+    const queryParams: unknown[] = normalizedDto.status ? [normalizedDto.status] : [];
+    let paramIndex = normalizedDto.status ? 2 : 1;
 
     const selectedGenreIds = normalizedGenreIds || [];
 
@@ -264,17 +264,17 @@ export class BooksQueryService {
         LEFT JOIN reviews r ON r.application_id IN (
           SELECT a.id FROM applications a WHERE a.book_id = b.id
         )
-        WHERE b.status = $1
+        WHERE ${normalizedDto.status ? 'b.status = $1' : "b.status IN ('active', 'in_progress', 'completed')"}
     `
       : `
       SELECT COUNT(DISTINCT b.id) as total
       FROM books b
       INNER JOIN users u ON u.id = b.author_id
       LEFT JOIN series s ON s.id = b.series_id
-      WHERE b.status = $1
+      WHERE ${normalizedDto.status ? 'b.status = $1' : "b.status IN ('active', 'in_progress', 'completed')"}
     `;
-    const countParams: unknown[] = [normalizedDto.status ?? 'active'];
-    let countParamIndex = 2;
+    const countParams: unknown[] = normalizedDto.status ? [normalizedDto.status] : [];
+    let countParamIndex = normalizedDto.status ? 2 : 1;
 
     if (normalizedDto.search) {
       countQuery += ` AND (

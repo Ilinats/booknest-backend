@@ -5,4 +5,3 @@ export enum DateRange {
   YEAR = 'year',
   ALL_TIME = 'all_time',
 }
-

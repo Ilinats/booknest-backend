@@ -15,6 +15,7 @@ import { UserProfileErrorCode } from './errors';
 import { UserType } from '../users/enums';
 import { UsersService } from '../users/users.service';
 import { UserActivityService } from '../user-activity/user-activity.service';
+import { NotificationTypeEnum } from '../notifications/enums/notification-type.enum';
 
 @Injectable()
 export class UserProfileService {
@@ -170,14 +171,7 @@ export class UserProfileService {
     settings: {
       notificationsEnabled?: boolean;
       emailNotifications?: boolean;
-      notificationPreferences?: {
-        friendRequests?: boolean;
-        friendRequestAccepted?: boolean;
-        applicationApproved?: boolean;
-        applicationRejected?: boolean;
-        reviewDeadlineReminders?: boolean;
-        authorBookPublished?: boolean;
-      } | null;
+      notificationPreferences?: NotificationTypeEnum[] | null;
     },
   ): Promise<UserProfile> {
     const profile = await this.getProfile(userId);

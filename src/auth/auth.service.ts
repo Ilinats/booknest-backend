@@ -37,6 +37,7 @@ import {
 import { UserResponseDto } from '../users/dto';
 import { AuthErrorCode, AuthErrors } from './errors/auth-errors';
 import { UserType } from '../users/enums';
+import { VerificationTypeEnum } from './enums';
 
 @Injectable()
 export class AuthService {
@@ -138,7 +139,7 @@ export class AuthService {
     const verificationCode =
       await this.verificationCodeService.createVerificationCode(
         savedUser.id,
-        'email_verification',
+        VerificationTypeEnum.EMAIL_VERIFICATION,
       );
 
     try {
@@ -156,16 +157,11 @@ export class AuthService {
       savedUser.username || savedUser.email,
       savedUser.email,
       savedUser.userType,
-      undefined,
-      undefined,
     );
     return { accessToken, refreshToken };
   }
 
-  async login(
-    dto: LoginDto,
-    meta?: { ip?: string; userAgent?: string; deviceName?: string },
-  ): Promise<LoginResponseDto> {
+  async login(dto: LoginDto): Promise<LoginResponseDto> {
     const user = await this.verifyPassword(dto.identifier, dto.password);
     if (!user) {
       const error = AuthErrors[AuthErrorCode.INVALID_CREDENTIALS];
@@ -180,9 +176,6 @@ export class AuthService {
       user.username || user.email,
       user.email,
       user.userType,
-      meta?.ip,
-      meta?.userAgent,
-      meta?.deviceName,
     );
     return { accessToken, refreshToken };
   }
@@ -199,10 +192,7 @@ export class AuthService {
     return { message: 'Logged out' };
   }
 
-  async refresh(
-    dto: RefreshTokenDto,
-    meta?: { ip?: string; userAgent?: string; deviceName?: string },
-  ): Promise<RefreshTokenResponseDto> {
+  async refresh(dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
     const hash = this.hashToken(dto.refreshToken);
     const token = await this.refreshTokenRepository.findOne({
       where: { tokenHash: hash },
@@ -243,9 +233,6 @@ export class AuthService {
       user.username || user.email,
       user.email,
       user.userType,
-      meta?.ip,
-      meta?.userAgent,
-      meta?.deviceName,
       token.familyId,
       token.id,
     );
@@ -343,9 +330,6 @@ export class AuthService {
     username: string,
     email: string,
     userType: UserType,
-    ip?: string,
-    userAgent?: string,
-    deviceName?: string,
     familyId?: string,
     replacedTokenId?: string,
   ) {
@@ -374,9 +358,6 @@ export class AuthService {
       replacedByTokenId: null,
       revokedAt: null,
       expiresAt,
-      ip: ip ?? null,
-      userAgent: userAgent ?? null,
-      deviceName: deviceName ?? null,
     });
 
     const saved = await this.refreshTokenRepository.save(entity);
@@ -483,7 +464,7 @@ export class AuthService {
   ): Promise<{ message: string; user: UserResponseDto }> {
     const result = await this.verificationCodeService.verifyCode(
       dto.code,
-      'email_verification',
+      VerificationTypeEnum.EMAIL_VERIFICATION,
     );
 
     if (!result.isValid || !result.user) {
@@ -523,7 +504,7 @@ export class AuthService {
     const verificationCode =
       await this.verificationCodeService.createVerificationCode(
         user.id,
-        'password_reset',
+        VerificationTypeEnum.PASSWORD_RESET,
       );
 
     await this.verificationCodeService.sendPasswordResetEmail(
@@ -542,7 +523,7 @@ export class AuthService {
   ): Promise<{ message: string }> {
     const result = await this.verificationCodeService.verifyCode(
       dto.code,
-      'password_reset',
+      VerificationTypeEnum.PASSWORD_RESET,
     );
 
     if (!result.isValid || !result.user) {
@@ -589,7 +570,7 @@ export class AuthService {
     const verificationCode =
       await this.verificationCodeService.createVerificationCode(
         user.id,
-        'email_verification',
+        VerificationTypeEnum.EMAIL_VERIFICATION,
       );
 
     console.log('Verification code created:', verificationCode.code);

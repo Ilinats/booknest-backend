@@ -1,1 +1,4 @@
-export type VerificationType = 'email_verification' | 'password_reset';
+export enum VerificationTypeEnum {
+    EMAIL_VERIFICATION = 'email_verification',
+    PASSWORD_RESET = 'password_reset',
+}

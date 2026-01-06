@@ -5,4 +5,3 @@ export enum BookSortBy {
   DEADLINE_SOONEST = 'deadline_soonest',
   MOST_AVAILABLE = 'most_available',
 }
-

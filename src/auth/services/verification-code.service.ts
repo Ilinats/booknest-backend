@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VerificationCode } from '../entity/verification-code.entity';
-import { VerificationType } from '../enums';
+import { VerificationTypeEnum } from '../enums';
 import { User } from '../../users/entity/user.entity';
 import { MailService } from '../../mail/mail.service';
 import { ConfigService } from '@nestjs/config';
@@ -30,7 +30,7 @@ export class VerificationCodeService {
 
   async createVerificationCode(
     userId: string,
-    type: VerificationType,
+    type: VerificationTypeEnum,
   ): Promise<VerificationCode> {
     await this.verificationCodeRepo.update(
       { userId, type, isUsed: false },
@@ -52,7 +52,7 @@ export class VerificationCodeService {
 
   async verifyCode(
     code: string,
-    type: VerificationType,
+    type: VerificationTypeEnum,
   ): Promise<{ isValid: boolean; user?: User }> {
     const verificationCode = await this.verificationCodeRepo.findOne({
       where: { code, type, isUsed: false },

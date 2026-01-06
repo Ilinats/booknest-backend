@@ -40,10 +40,6 @@ export class Review {
   @Column({ name: 'is_public', type: 'boolean', default: true })
   isPublic!: boolean;
 
-  @Index()
-  @Column({ name: 'is_featured', type: 'boolean', default: false })
-  isFeatured!: boolean;
-
   @Column({ name: 'word_count', type: 'int', nullable: true })
   wordCount?: number | null;
 

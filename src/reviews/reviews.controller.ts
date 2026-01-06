@@ -149,34 +149,7 @@ export class ReviewsController {
   ) {
     return this.reviewsService.getUserReviews(userId, dto);
   }
-
-  @Get('featured')
-  @ApiOperation({ summary: 'Get featured reviews (Public)' })
-  @ApiQuery({ type: () => BasePaginationDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Paginated list of featured reviews',
-  })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  getFeaturedReviews(@Query() dto: BasePaginationDto) {
-    return this.reviewsService.getFeaturedReviews(dto);
-  }
-  @UseGuards(JwtAuthGuard)
-  @Patch(':reviewId')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update a review (Authenticated)' })
-  @ApiResponse({ status: 200, description: 'Review updated successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Not your review' })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  update(
-    @CurrentUser() user: JwtPayload,
-    @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
-    @Body() dto: UpdateReviewDto & { isFeatured?: boolean },
-  ) {
-    return this.reviewsService.update(reviewId, user.sub, user.userType, dto);
-  }
-
+  
   @UseGuards(JwtAuthGuard)
   @Delete(':reviewId')
   @ApiBearerAuth()

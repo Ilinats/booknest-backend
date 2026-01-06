@@ -1,0 +1,4 @@
+export enum UserProfileErrorCode {
+  USER_NOT_FOUND = 'USER_PROFILE_USER_NOT_FOUND',
+  PROFILE_PRIVATE = 'USER_PROFILE_PRIVATE',
+}

@@ -16,7 +16,6 @@ export class PublicAccounts1767017723418 implements MigrationInterface {
           WHERE profile_privacy != 'public'
         `);
 
-    // Update the default values in the database schema
     await queryRunner.query(`
           ALTER TABLE user_profiles
           ALTER COLUMN activity_privacy SET DEFAULT 'public'
@@ -29,7 +28,6 @@ export class PublicAccounts1767017723418 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Revert default values back to friends
     await queryRunner.query(`
           ALTER TABLE user_profiles
           ALTER COLUMN activity_privacy SET DEFAULT 'friends'
@@ -39,8 +37,5 @@ export class PublicAccounts1767017723418 implements MigrationInterface {
           ALTER TABLE user_profiles
           ALTER COLUMN profile_privacy SET DEFAULT 'friends'
         `);
-
-    // Note: We don't revert the data changes as we can't know the original values
-    // Users will need to manually change their privacy settings if they want
   }
 }

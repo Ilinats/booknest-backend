@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
@@ -32,10 +32,10 @@ import { FilesModule } from '../files/files.module';
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: (config: ConfigService) => ({
+      useFactory: (config: ConfigService): JwtModuleOptions => ({
         secret: config.get<string>('JWT_SECRET') ?? 'dev_secret_change_me',
         signOptions: {
-          expiresIn: config.get<string>('JWT_EXPIRES_IN') ?? '15m',
+          expiresIn: (config.get<string>('JWT_EXPIRES_IN') ?? '15m') as any,
         },
       }),
       inject: [ConfigService],

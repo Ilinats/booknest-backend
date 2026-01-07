@@ -26,7 +26,6 @@ export class MailService {
     cfg: SmtpConfig,
     to: string,
     verifyUrl: string,
-    appDeepLinkUrl?: string,
     code?: string,
   ): Promise<void> {
     try {
@@ -60,18 +59,14 @@ export class MailService {
           `,
         });
       } else {
-        const primaryUrl = appDeepLinkUrl || verifyUrl;
-        const htmlButton = `<a href="${primaryUrl}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px">Verify Email</a>`;
-        const altLink = appDeepLinkUrl
-          ? `<p>If the button doesn't open the app, <a href="${verifyUrl}">tap here</a> instead.</p>`
-          : '';
+        const htmlButton = `<a href="${verifyUrl}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px">Verify Email</a>`;
 
         await transporter.sendMail({
           from,
           to,
           subject: 'Verify your BookNest email',
-          text: `Welcome to BookNest!\n\nPlease verify your email by opening the link below.\n\n${primaryUrl}\n\nIf the button does not work, copy and paste the link into your browser.`,
-          html: `<p>Welcome to <strong>BookNest</strong>!</p><p>Please verify your email:</p><p>${htmlButton}</p>${altLink}<p>If the button does not work, copy and paste this link: <br/><code>${primaryUrl}</code></p>`,
+          text: `Welcome to BookNest!\n\nPlease verify your email by opening the link below.\n\n${verifyUrl}\n\nIf the button does not work, copy and paste the link into your browser.`,
+          html: `<p>Welcome to <strong>BookNest</strong>!</p><p>Please verify your email:</p><p>${htmlButton}</p><p>If the button does not work, copy and paste this link: <br/><code>${verifyUrl}</code></p>`,
         });
       }
     } catch (err) {
@@ -86,7 +81,6 @@ export class MailService {
     cfg: SmtpConfig,
     to: string,
     resetUrl: string,
-    appDeepLinkUrl?: string,
     code?: string,
   ): Promise<void> {
     try {
@@ -121,18 +115,14 @@ export class MailService {
           `,
         });
       } else {
-        const primaryUrl = appDeepLinkUrl || resetUrl;
-        const htmlButton = `<a href="${primaryUrl}" style="display:inline-block;padding:10px 16px;background:#dc2626;color:#fff;text-decoration:none;border-radius:6px">Reset Password</a>`;
-        const altLink = appDeepLinkUrl
-          ? `<p>If the button doesn't open the app, <a href="${resetUrl}">tap here</a> instead.</p>`
-          : '';
+        const htmlButton = `<a href="${resetUrl}" style="display:inline-block;padding:10px 16px;background:#dc2626;color:#fff;text-decoration:none;border-radius:6px">Reset Password</a>`;
 
         await transporter.sendMail({
           from,
           to,
           subject: 'Reset your BookNest password',
-          text: `We received a request to reset your BookNest password.\n\nUse the link below to set a new password. If you did not request this, please ignore this email.\n\n${primaryUrl}\n\nThis link will expire in 15 minutes.`,
-          html: `<p>We received a request to reset your <strong>BookNest</strong> password.</p><p>Use the link below to set a new password. If you did not request this, please ignore this email.</p><p>${htmlButton}</p>${altLink}<p>This link will expire in 15 minutes.</p>`,
+          text: `We received a request to reset your BookNest password.\n\nUse the link below to set a new password. If you did not request this, please ignore this email.\n\n${resetUrl}\n\nThis link will expire in 15 minutes.`,
+          html: `<p>We received a request to reset your <strong>BookNest</strong> password.</p><p>Use the link below to set a new password. If you did not request this, please ignore this email.</p><p>${htmlButton}</p><p>This link will expire in 15 minutes.</p>`,
         });
       }
     } catch (err) {

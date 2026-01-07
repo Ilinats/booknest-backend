@@ -29,7 +29,6 @@ import {
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { FindReviewsDto } from './dto/find-reviews.dto';
-import { BasePaginationDto } from '../common';
 import { UserType } from '../users/enums';
 import { Review } from './entity/review.entity';
 
@@ -149,7 +148,24 @@ export class ReviewsController {
   ) {
     return this.reviewsService.getUserReviews(userId, dto);
   }
-  
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':reviewId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a review (Authenticated)' })
+  @ApiResponse({ status: 200, description: 'Review updated successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Not your review' })
+  @ApiResponse({ status: 404, description: 'Review not found' })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  update(
+    @CurrentUser() user: JwtPayload,
+    @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
+    @Body() dto: UpdateReviewDto,
+  ) {
+    return this.reviewsService.update(reviewId, user.sub, user.userType, dto);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Delete(':reviewId')
   @ApiBearerAuth()

@@ -77,11 +77,6 @@ export class VerificationCodeService {
   async sendVerificationEmail(user: User, code: string): Promise<void> {
     const webBaseUrl =
       this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
-    const appScheme =
-      this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
-    const appHost =
-      this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
-    const appDeepLink = `${appScheme}${appHost}?code=${code}`;
 
     const gmailUser = this.configService.get<string>('GMAIL_USER');
     const gmailPassword = this.configService.get<string>('GMAIL_APP_PASSWORD');
@@ -115,7 +110,6 @@ export class VerificationCodeService {
       smtpConfig,
       user.email,
       verifyUrl,
-      appDeepLink,
       code,
     );
   }
@@ -123,12 +117,6 @@ export class VerificationCodeService {
   async sendPasswordResetEmail(user: User, code: string): Promise<void> {
     const webBaseUrl =
       this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
-    const appScheme =
-      this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
-    const appHost =
-      this.configService.get<string>('APP_DEEP_LINK_HOST') ||
-      '://reset-password';
-    const appDeepLink = `${appScheme}${appHost}?code=${code}`;
 
     const gmailUser = this.configService.get<string>('GMAIL_USER');
     const gmailPassword = this.configService.get<string>('GMAIL_APP_PASSWORD');
@@ -153,7 +141,6 @@ export class VerificationCodeService {
       smtpConfig,
       user.email,
       resetUrl,
-      appDeepLink,
       code,
     );
   }

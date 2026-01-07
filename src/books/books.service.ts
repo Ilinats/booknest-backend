@@ -323,9 +323,49 @@ export class BooksService {
       book.distributionType = dto.distributionType;
     }
     if (dto.totalCopies !== undefined) {
-      book.totalCopies = dto.totalCopies;
-    }
-    if (dto.availableCopies !== undefined) {
+      const newTotalCopies = dto.totalCopies;
+
+      const approvedApplicationsCount = await this.applicationRepo.count({
+        where: {
+          bookId: bookId,
+          status: ApplicationStatus.APPROVED,
+        },
+      });
+
+      if (newTotalCopies < approvedApplicationsCount) {
+        const error = BookErrors[BookErrorCode.BOOK_INVALID_COPIES];
+        throw new BadRequestException({
+          message: `Total copies (${newTotalCopies}) cannot be less than the number of approved applications (${approvedApplicationsCount})`,
+          code: error.code,
+        });
+      }
+
+      const newAvailableCopies = newTotalCopies - approvedApplicationsCount;
+
+      book.totalCopies = newTotalCopies;
+      book.availableCopies = newAvailableCopies;
+
+      this.logger.log(
+        `Book ${bookId}: Updated total copies to ${newTotalCopies}, available copies set to ${newAvailableCopies} (${approvedApplicationsCount} approved applications)`,
+      );
+    } else if (dto.availableCopies !== undefined) {
+      const approvedApplicationsCount = await this.applicationRepo.count({
+        where: {
+          bookId: bookId,
+          status: ApplicationStatus.APPROVED,
+        },
+      });
+
+      const maxAvailableCopies = book.totalCopies - approvedApplicationsCount;
+
+      if (dto.availableCopies > maxAvailableCopies) {
+        const error = BookErrors[BookErrorCode.BOOK_INVALID_COPIES];
+        throw new BadRequestException({
+          message: `Available copies (${dto.availableCopies}) cannot exceed total copies (${book.totalCopies}) minus approved applications (${approvedApplicationsCount}). Maximum available: ${maxAvailableCopies}`,
+          code: error.code,
+        });
+      }
+
       book.availableCopies = dto.availableCopies;
     }
     if (dto.selectionCriteria !== undefined) {
@@ -342,12 +382,36 @@ export class BooksService {
     }
 
     if (dto.applicationDeadline !== undefined) {
-      book.applicationDeadline = new Date(dto.applicationDeadline);
+      const newDeadline = new Date(dto.applicationDeadline);
+      const now = new Date();
+
+      if (book.status === BookStatus.IN_PROGRESS && newDeadline > now) {
+        book.status = BookStatus.ACTIVE;
+        this.logger.log(
+          `Book ${bookId} deadline extended to future date. Reverting status from IN_PROGRESS to ACTIVE.`,
+        );
+      }
+
+      book.applicationDeadline = newDeadline;
     }
     if (dto.reviewDeadline !== undefined) {
-      book.reviewDeadline = dto.reviewDeadline
+      const newReviewDeadline = dto.reviewDeadline
         ? new Date(dto.reviewDeadline)
         : null;
+      const now = new Date();
+
+      if (
+        book.status === BookStatus.COMPLETED &&
+        newReviewDeadline &&
+        newReviewDeadline > now
+      ) {
+        book.status = BookStatus.IN_PROGRESS;
+        this.logger.log(
+          `Book ${bookId} review deadline extended to future date. Reverting status from COMPLETED to IN_PROGRESS.`,
+        );
+      }
+
+      book.reviewDeadline = newReviewDeadline;
     }
 
     if (

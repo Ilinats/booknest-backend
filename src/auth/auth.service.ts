@@ -298,18 +298,11 @@ export class AuthService {
       this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
     const verifyUrl = `${webBaseUrl}/verify-email?token=${encodeURIComponent(token)}`;
 
-    const appScheme =
-      this.configService.get<string>('APP_DEEP_LINK_SCHEME') || 'booknest';
-    const appHost =
-      this.configService.get<string>('APP_DEEP_LINK_HOST') || '://verify-email';
-    const appDeepLink = `${appScheme}${appHost}?token=${encodeURIComponent(token)}`;
-
     try {
       await this.mailService.sendVerificationEmail(
         this.smtpConfig(),
         user.email,
         verifyUrl,
-        appDeepLink,
       );
     } catch (error) {
       console.error('Failed to send verification email:', error.message);

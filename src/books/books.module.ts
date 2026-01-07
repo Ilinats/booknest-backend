@@ -14,6 +14,7 @@ import { BooksController } from './books.controller';
 import { BooksQueryService } from './services/books-query.service';
 import { BooksAnalyticsService } from './services/books-analytics.service';
 import { BooksFileService } from './services/books-file.service';
+import { BooksSchedulerService } from './services/books-scheduler.service';
 import { SeriesModule } from '../series/series.module';
 import { AuthModule } from '../auth/auth.module';
 import { FilesModule } from '../files/files.module';
@@ -40,6 +41,7 @@ import { FilesModule } from '../files/files.module';
     BooksQueryService,
     BooksAnalyticsService,
     BooksFileService,
+    BooksSchedulerService,
   ],
   controllers: [BooksController],
   exports: [

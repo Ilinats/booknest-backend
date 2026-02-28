@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { UserType } from '../../users/enums';
 import { JwtPayload } from '../decorators/current-user.decorator';
-import { AuthErrorCode, AuthErrors } from '../../common/errors/auth-errors';
+import { AuthErrors } from '../errors/auth-errors';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -28,37 +28,26 @@ export class RolesGuard implements CanActivate {
     const user = request.user as JwtPayload | undefined;
 
     if (!user) {
-      const error = AuthErrors[AuthErrorCode.ROLE_ACCESS_REQUIRED_ERROR];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+      throw new ForbiddenException(AuthErrors.ROLE_ACCESS_REQUIRED);
     }
 
     const userRole = user.userType;
 
-    if (!userRole || !requiredRoles.includes(userRole as UserType)) {
-      let error;
-      if (
-        requiredRoles.includes(UserType.AUTHOR) ||
-        requiredRoles.includes('author' as any)
-      ) {
-        error = AuthErrors[AuthErrorCode.AUTHOR_ACCESS_REQUIRED_ERROR];
-      } else if (
-        requiredRoles.includes(UserType.READER) ||
-        requiredRoles.includes('reader' as any)
-      ) {
-        error = AuthErrors[AuthErrorCode.READER_ACCESS_REQUIRED_ERROR];
-      } else {
-        error = AuthErrors[AuthErrorCode.ROLE_ACCESS_REQUIRED_ERROR];
-      }
-
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+    if (!userRole || !requiredRoles.includes(userRole)) {
+      const errorCode = this.getRequiredRoleError(requiredRoles);
+      throw new ForbiddenException(errorCode);
     }
 
     return true;
+  }
+
+  private getRequiredRoleError(requiredRoles: UserType[]): AuthErrors {
+    if (requiredRoles.includes(UserType.AUTHOR)) {
+      return AuthErrors.AUTHOR_ACCESS_REQUIRED;
+    }
+    if (requiredRoles.includes(UserType.READER)) {
+      return AuthErrors.READER_ACCESS_REQUIRED;
+    }
+    return AuthErrors.ROLE_ACCESS_REQUIRED;
   }
 }

@@ -10,7 +10,7 @@ export class BulkActionDto {
 
   @ApiProperty({ enum: ApplicationStatus })
   @IsEnum(ApplicationStatus)
-  action!: Extract<ApplicationStatus, 'approved' | 'rejected'>;
+  action!: ApplicationStatus;
 
   @ApiPropertyOptional()
   @IsOptional()

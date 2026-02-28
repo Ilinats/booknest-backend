@@ -12,16 +12,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Book } from '../../books/entity/book.entity';
 import { BookErrors, BookErrorCode } from 'src/books/errors';
-import {
-  ApplicationErrors,
-  ApplicationErrorCode,
-} from 'src/applications/errors';
+import { ApplicationErrors } from 'src/applications/errors';
 import { ReviewErrorCode } from 'src/reviews/errors';
 import { SeriesErrors, SeriesErrorCode } from 'src/series/errors';
 import { Application } from '../../applications/entity/application.entity';
 import { Review } from '../../reviews/entity/review.entity';
 import { Series } from '../../series/entity/series.entity';
-import { User } from '../../users/entity/user.entity';
 import { OWNERSHIP_KEY } from '../decorators/ownership.decorator';
 
 @Injectable()
@@ -33,7 +29,6 @@ export class OwnershipGuard implements CanActivate {
     private readonly applicationRepo: Repository<Application>,
     @InjectRepository(Review) private readonly reviewRepo: Repository<Review>,
     @InjectRepository(Series) private readonly seriesRepo: Repository<Series>,
-    @InjectRepository(User) private readonly userRepo: Repository<User>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -87,12 +82,7 @@ export class OwnershipGuard implements CanActivate {
           relations: ['book', 'reader'],
         });
         if (!application) {
-          const error =
-            ApplicationErrors[ApplicationErrorCode.APPLICATION_NOT_FOUND];
-          throw new NotFoundException({
-            message: error.message,
-            code: error.code,
-          });
+          throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
         }
         isOwner =
           application.readerId === userId ||
@@ -131,8 +121,7 @@ export class OwnershipGuard implements CanActivate {
         break;
 
       default:
-        const error =
-          AuthErrors[AuthErrorCode.INVALID_OWNERSHIP_RESOURCE_TYPE];
+        const error = AuthErrors[AuthErrorCode.INVALID_OWNERSHIP_RESOURCE_TYPE];
         throw new ForbiddenException({
           message: error.message,
           code: error.code,

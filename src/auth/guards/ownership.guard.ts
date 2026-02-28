@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtPayload } from '../decorators/current-user.decorator';
-import { AuthErrorCode, AuthErrors } from '../../common/errors/auth-errors';
+import { AuthErrors } from '../errors/auth-errors';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Book } from '../../books/entity/book.entity';
@@ -45,11 +45,7 @@ export class OwnershipGuard implements CanActivate {
     const user = request.user as JwtPayload | undefined;
 
     if (!user) {
-      const error = AuthErrors[AuthErrorCode.UNAUTHORIZED_ERROR];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+      throw new ForbiddenException(AuthErrors.ROLE_ACCESS_REQUIRED);
     }
 
     const resourceId = request.params[ownership.paramName];
@@ -67,11 +63,7 @@ export class OwnershipGuard implements CanActivate {
       case 'book':
         const book = await this.bookRepo.findOne({ where: { id: resourceId } });
         if (!book) {
-          const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-          throw new NotFoundException({
-            message: error.message,
-            code: error.code,
-          });
+          throw new NotFoundException(BookErrors[BookErrorCode.BOOK_NOT_FOUND]);
         }
         isOwner = book.authorId === userId;
         break;
@@ -107,11 +99,9 @@ export class OwnershipGuard implements CanActivate {
           where: { id: resourceId },
         });
         if (!series) {
-          const error = SeriesErrors[SeriesErrorCode.SERIES_NOT_FOUND];
-          throw new NotFoundException({
-            message: error.message,
-            code: error.code,
-          });
+          throw new NotFoundException(
+            SeriesErrors[SeriesErrorCode.SERIES_NOT_FOUND],
+          );
         }
         isOwner = series.authorId === userId;
         break;
@@ -121,19 +111,11 @@ export class OwnershipGuard implements CanActivate {
         break;
 
       default:
-        const error = AuthErrors[AuthErrorCode.INVALID_OWNERSHIP_RESOURCE_TYPE];
-        throw new ForbiddenException({
-          message: error.message,
-          code: error.code,
-        });
+        throw new ForbiddenException(AuthErrors.ROLE_ACCESS_REQUIRED);
     }
 
     if (!isOwner) {
-      const error = AuthErrors[AuthErrorCode.ROLE_ACCESS_REQUIRED_ERROR];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+      throw new ForbiddenException(AuthErrors.ROLE_ACCESS_REQUIRED);
     }
 
     return true;

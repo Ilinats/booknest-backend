@@ -2,14 +2,12 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   Param,
   Post,
   Query,
   Res,
   UsePipes,
   ValidationPipe,
-  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -35,8 +33,6 @@ import {
   LogoutResponseDto,
   VerificationStatusResponseDto,
 } from './dto';
-import { AuthErrorCode, AuthErrors } from './errors/auth-errors';
-import { UserType } from '../users/enums';
 import { Response } from 'express';
 
 @ApiTags('Auth')

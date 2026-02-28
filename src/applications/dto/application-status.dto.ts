@@ -5,7 +5,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class ApplicationStatusDto {
   @ApiProperty({ enum: ApplicationStatus })
   @IsEnum(ApplicationStatus)
-  status!: Extract<ApplicationStatus, 'approved' | 'rejected'>;
+  status!: ApplicationStatus;
 
   @ApiPropertyOptional()
   @IsOptional()

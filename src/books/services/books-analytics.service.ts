@@ -14,7 +14,7 @@ import { User } from '../../users/entity/user.entity';
 import { UserAddress } from '../../user-address/entity/user-address.entity';
 import { UserGenrePreference } from '../../user-genre-preferences/entity/user-genre-preference.entity';
 import { BookGenre } from '../entity/book-genre.entity';
-import { BookErrorCode, BookErrors } from '../errors/book-errors';
+import { BookErrors } from '../errors/book-errors';
 import { ApplicationStatus } from '../../applications/enums';
 
 @Injectable()
@@ -38,15 +38,10 @@ export class BooksAnalyticsService {
   async stats(authorId: string, bookId: string) {
     const book = await this.bookRepo.findOne({ where: { id: bookId } });
     if (!book) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
     }
     if (book.authorId !== authorId) {
-      const error = BookErrors[BookErrorCode.BOOK_CANNOT_MODIFY_OTHERS];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+      throw new ForbiddenException(BookErrors.BOOK_CANNOT_MODIFY_OTHERS);
     }
 
     const [totalApplicants, approvedReaders] = await Promise.all([
@@ -78,15 +73,10 @@ export class BooksAnalyticsService {
   async analytics(authorId: string, bookId: string) {
     const book = await this.bookRepo.findOne({ where: { id: bookId } });
     if (!book) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
     }
     if (book.authorId !== authorId) {
-      const error = BookErrors[BookErrorCode.BOOK_CANNOT_MODIFY_OTHERS];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+      throw new ForbiddenException(BookErrors.BOOK_CANNOT_MODIFY_OTHERS);
     }
 
     return this.getBookAnalytics(bookId);
@@ -102,8 +92,7 @@ export class BooksAnalyticsService {
     });
 
     if (!book) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
     }
 
     const [

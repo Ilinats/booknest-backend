@@ -10,12 +10,26 @@ import { RefreshToken } from './entity/refresh-token.entity';
 import { UserAddressModule } from '../user-address/user-address.module';
 import { VerificationCode } from './entity/verification-code.entity';
 import { VerificationCodeService } from './services/verification-code.service';
+import { Book } from '../books/entity';
+import { Application } from '../applications/entity/application.entity';
+import { Review } from '../reviews/entity/review.entity';
+import { FilesModule } from '../files/files.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
     ConfigModule,
     UserAddressModule,
-    TypeOrmModule.forFeature([User, RefreshToken, VerificationCode]),
+    FilesModule,
+    MailModule,
+    TypeOrmModule.forFeature([
+      User,
+      RefreshToken,
+      VerificationCode,
+      Book,
+      Application,
+      Review,
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService): JwtModuleOptions => ({

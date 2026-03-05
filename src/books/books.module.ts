@@ -11,10 +11,10 @@ import { Genre } from '../genres/entity/genre.entity';
 import { Series } from '../series/entity/series.entity';
 import { BooksService } from './books.service';
 import { BooksController } from './books.controller';
-import { BooksQueryService } from './services/books-query.service';
 import { BooksAnalyticsService } from './services/books-analytics.service';
 import { BooksFileService } from './services/books-file.service';
 import { BooksSchedulerService } from './services/books-scheduler.service';
+import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
 import { SeriesModule } from '../series/series.module';
 import { AuthModule } from '../auth/auth.module';
 import { FilesModule } from '../files/files.module';
@@ -38,7 +38,8 @@ import { FilesModule } from '../files/files.module';
   ],
   providers: [
     BooksService,
-    BooksQueryService,
+    BooksQueryHelper,
+    BooksUpdateHelper,
     BooksAnalyticsService,
     BooksFileService,
     BooksSchedulerService,
@@ -46,7 +47,6 @@ import { FilesModule } from '../files/files.module';
   controllers: [BooksController],
   exports: [
     BooksService,
-    BooksQueryService,
     BooksAnalyticsService,
     BooksFileService,
   ],

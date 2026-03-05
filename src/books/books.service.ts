@@ -3,53 +3,38 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
-  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, In, Not, IsNull } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Book } from './entity/book.entity';
 import { Series } from '../series/entity/series.entity';
-import { BookGenre } from './entity/book-genre.entity';
-import { CreateBookDto, UpdateBookDto, BrowseBooksDto } from './dto';
+import { CreateBookDto, UpdateBookDto } from './dto';
 import { Application } from '../applications/entity/application.entity';
 import { Review } from '../reviews/entity/review.entity';
-import { User } from '../users/entity/user.entity';
-import { UserAddress } from '../user-address/entity/user-address.entity';
-import { UserGenrePreference } from '../user-genre-preferences/entity/user-genre-preference.entity';
-import { Genre } from '../genres/entity/genre.entity';
 import { FilesService } from '../files/files.service';
 import { SelectionMethod, BookStatus, DistributionType } from './enums';
-import { BasePaginationDto, createPaginatedResponse } from '../common';
-import { BookErrorCode, BookErrors } from './errors/book-errors';
+import { PaginateQuery, paginate, FilterOperator } from 'nestjs-paginate';
+import { BookErrors } from './errors/book-errors';
 import { ensureAuthor } from '../common/utils/auth.util';
 import { UserType } from '../users/enums';
-import { BooksQueryService } from './services/books-query.service';
 import { BooksAnalyticsService } from './services/books-analytics.service';
 import { BooksFileService } from './services/books-file.service';
 import { ApplicationStatus } from '../applications/enums';
+import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
 
 @Injectable()
 export class BooksService {
-  private readonly logger = new Logger(BooksService.name);
-
   constructor(
     @InjectRepository(Book) private readonly bookRepo: Repository<Book>,
     @InjectRepository(Series) private readonly seriesRepo: Repository<Series>,
-    @InjectRepository(BookGenre)
-    private readonly bookGenreRepo: Repository<BookGenre>,
     @InjectRepository(Application)
     private readonly applicationRepo: Repository<Application>,
     @InjectRepository(Review) private readonly reviewRepo: Repository<Review>,
-    @InjectRepository(User) private readonly userRepo: Repository<User>,
-    @InjectRepository(UserAddress)
-    private readonly userAddressRepo: Repository<UserAddress>,
-    @InjectRepository(UserGenrePreference)
-    private readonly userGenrePrefRepo: Repository<UserGenrePreference>,
-    @InjectRepository(Genre) private readonly genreRepo: Repository<Genre>,
     private readonly filesService: FilesService,
-    private readonly booksQueryService: BooksQueryService,
     private readonly booksAnalyticsService: BooksAnalyticsService,
     private readonly booksFileService: BooksFileService,
+    private readonly booksQueryHelper: BooksQueryHelper,
+    private readonly booksUpdateHelper: BooksUpdateHelper,
   ) {}
 
   async create(
@@ -58,35 +43,14 @@ export class BooksService {
     dto: CreateBookDto,
   ): Promise<Book> {
     await this.ensureSeriesOwnershipIfProvided(authorId, dto.seriesId);
-    const totalCopies = dto.totalCopies ?? 1;
-    const availableCopies = dto.availableCopies ?? totalCopies;
-    if (availableCopies > totalCopies || availableCopies < 0) {
-      const error = BookErrors[BookErrorCode.BOOK_INVALID_COPIES];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
-    }
-
-    const applicationDeadline = new Date(dto.applicationDeadline);
-    const reviewDeadline = dto.reviewDeadline
-      ? new Date(dto.reviewDeadline)
-      : null;
-
-    if (reviewDeadline && reviewDeadline <= applicationDeadline) {
-      const error = BookErrors[BookErrorCode.BOOK_INVALID_DEADLINE];
-      throw new BadRequestException({
-        message: error.message,
-        code: error.code,
-      });
-    }
+    this.validateCopies(dto.totalCopies ?? 1, dto.availableCopies);
+    this.validateDeadlines(dto.applicationDeadline, dto.reviewDeadline);
 
     const book = this.bookRepo.create({
       authorId,
       title: dto.title,
       shortDescription: dto.shortDescription ?? null,
       fullDescription: dto.fullDescription ?? null,
-
       coverImageUrl: null,
       pageCount: dto.pageCount ?? null,
       ageRating: dto.ageRating,
@@ -94,39 +58,45 @@ export class BooksService {
       fileUrl: null,
       fileSize: null,
       fileType: null,
-      totalCopies,
-      availableCopies,
-      applicationDeadline,
-      reviewDeadline,
+      totalCopies: dto.totalCopies ?? 1,
+      availableCopies: dto.availableCopies ?? dto.totalCopies ?? 1,
+      applicationDeadline: new Date(dto.applicationDeadline),
+      reviewDeadline: dto.reviewDeadline ? new Date(dto.reviewDeadline) : null,
       selectionCriteria: dto.selectionCriteria ?? null,
       selectionMethod: dto.selectionMethod ?? SelectionMethod.AUTHOR_SELECTS,
       seriesId: dto.seriesId ?? null,
       seriesOrder: dto.seriesOrder ?? null,
     });
+
     const saved = await this.bookRepo.save(book);
+
     if (dto.genres?.length) {
-      const genreIds = dto.genres;
-      const genres = await this.genreRepo.find({ where: { id: In(genreIds) } });
-      if (genres.length !== genreIds.length) {
-        const foundIds = genres.map((g) => g.id);
-        const missing = genreIds.filter((id) => !foundIds.includes(id));
-        const error = BookErrors[BookErrorCode.BOOK_INVALID_GENRE_IDS];
-        throw new BadRequestException({
-          message: `${error.message}: ${missing.join(', ')}`,
-          code: error.code,
-        });
-      }
-      const bgs = genreIds.map((genreId) =>
-        this.bookGenreRepo.create({ bookId: saved.id, genreId }),
-      );
-      await this.bookGenreRepo.save(bgs);
+      await this.booksUpdateHelper.updateGenres(saved.id, dto.genres);
     }
+
     return (
       (await this.bookRepo.findOne({
         where: { id: saved.id },
         relations: ['author', 'series', 'bookGenres', 'bookGenres.genre'],
       })) || saved
     );
+  }
+
+  private validateCopies(totalCopies: number, availableCopies?: number) {
+    const available = availableCopies ?? totalCopies;
+    if (available > totalCopies || available < 0) {
+      throw new ForbiddenException(BookErrors.BOOK_INVALID_COPIES);
+    }
+  }
+
+  private validateDeadlines(applicationDeadline: string, reviewDeadline?: string) {
+    if (reviewDeadline) {
+      const appDeadline = new Date(applicationDeadline);
+      const revDeadline = new Date(reviewDeadline);
+      if (revDeadline <= appDeadline) {
+        throw new BadRequestException(BookErrors.BOOK_INVALID_DEADLINE);
+      }
+    }
   }
 
   async createWithFile(
@@ -137,21 +107,9 @@ export class BooksService {
   ): Promise<Book> {
     const book = await this.create(authorId, authorUserType, dto);
 
-    if (dto.distributionType !== DistributionType.PHYSICAL) {
-      if (!file) {
-        const error = BookErrors[BookErrorCode.BOOK_FILE_NOT_AVAILABLE];
-        throw new BadRequestException({
-          message: 'File is required for digital or both distribution types',
-          code: error.code,
-        });
-      }
-      const result = await this.booksFileService.uploadBookFile(
-        authorId,
-        authorUserType,
-        book.id,
-        file,
-      );
-      return result.book;
+    const needsFile = dto.distributionType !== DistributionType.PHYSICAL;
+    if (needsFile && !file) {
+      throw new BadRequestException(BookErrors.BOOK_FILE_NOT_AVAILABLE);
     }
 
     if (file) {
@@ -171,68 +129,25 @@ export class BooksService {
     if (!seriesId) return;
     const series = await this.seriesRepo.findOne({ where: { id: seriesId } });
     if (!series || series.authorId !== authorId) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_OWNED_BY_AUTHOR];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+      throw new ForbiddenException(BookErrors.BOOK_NOT_OWNED_BY_AUTHOR);
     }
   }
 
-  async findMy(authorId: string, sortBy?: string): Promise<Book[]> {
-    const books = await this.bookRepo.find({
-      where: { authorId },
+  async findMy(authorId: string, query: PaginateQuery) {
+    return paginate(query, this.bookRepo, {
+      sortableColumns: ['createdAt', 'title', 'status'],
+      searchableColumns: ['title'],
+      defaultSortBy: [['createdAt', 'DESC']],
+      filterableColumns: {
+        status: [FilterOperator.EQ],
+      },
       relations: ['author', 'series', 'bookGenres', 'bookGenres.genre'],
+      where: {
+        authorId,
+      },
+      defaultLimit: 20,
+      maxLimit: 100,
     });
-
-    if (sortBy === 'application_count') {
-      const bookIds = books.map((book) => book.id);
-      const applicationCounts = await this.applicationRepo
-        .createQueryBuilder('application')
-        .select('application.bookId', 'bookId')
-        .addSelect('COUNT(application.id)', 'count')
-        .where('application.bookId IN (:...bookIds)', { bookIds })
-        .andWhere('application.status != :withdrawnStatus', {
-          withdrawnStatus: 'withdrawn',
-        })
-        .groupBy('application.bookId')
-        .getRawMany();
-
-      const countMap = new Map(
-        applicationCounts.map((row) => [row.bookId, parseInt(row.count, 10)]),
-      );
-
-      books.sort((a, b) => {
-        const countA = countMap.get(a.id) || 0;
-        const countB = countMap.get(b.id) || 0;
-        if (countB !== countA) {
-          return countB - countA;
-        }
-        return (
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-      });
-
-      return books;
-    }
-
-    switch (sortBy) {
-      case 'title':
-        books.sort((a, b) => a.title.localeCompare(b.title));
-        break;
-      case 'status':
-        books.sort((a, b) => a.status.localeCompare(b.status));
-        break;
-      case 'date_created':
-      default:
-        books.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        );
-        break;
-    }
-
-    return books;
   }
 
   async findOnePublic(
@@ -240,47 +155,25 @@ export class BooksService {
     userId?: string,
     userType?: UserType,
   ): Promise<Book> {
-    try {
-      const book = await this.bookRepo.findOne({
-        where: { id: bookId },
-        relations: ['author', 'series', 'bookGenres', 'bookGenres.genre'],
-      });
+    const book = await this.bookRepo.findOne({
+      where: { id: bookId },
+      relations: ['author', 'series', 'bookGenres', 'bookGenres.genre'],
+    });
 
-      if (!book) {
-        const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-        throw new NotFoundException({
-          message: error.message,
-          code: error.code,
-        });
-      }
-
-      const isAuthor =
-        userId && userType === UserType.AUTHOR && book.authorId === userId;
-
-      let hasApprovedApplication = false;
-      if (userId && !isAuthor) {
-        const application = await this.applicationRepo.findOne({
-          where: {
-            readerId: userId,
-            bookId: bookId,
-            status: ApplicationStatus.APPROVED,
-          },
-        });
-        hasApprovedApplication = !!application;
-      }
-
-      const canSeeFileInfo = isAuthor || hasApprovedApplication;
-      if (!canSeeFileInfo) {
-        delete book.fileUrl;
-        delete book.fileSize;
-        delete book.fileType;
-      }
-
-      return book;
-    } catch (error) {
-      this.logger.error('Error in findOnePublic:', error);
-      throw error;
+    if (!book) {
+      throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
     }
+
+    const isAuthor = userId && userType === UserType.AUTHOR && book.authorId === userId;
+    const hasApprovedApplication = await this.checkUserApplicationStatus(userId || '', bookId);
+
+    if (!isAuthor && !hasApprovedApplication) {
+      delete book.fileUrl;
+      delete book.fileSize;
+      delete book.fileType;
+    }
+
+    return book;
   }
 
   async update(
@@ -290,174 +183,36 @@ export class BooksService {
     dto: UpdateBookDto & Partial<CreateBookDto>,
   ): Promise<Book> {
     ensureAuthor(authorUserType);
-    const book = await this.bookRepo.findOne({ where: { id: bookId } });
-    if (!book) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
-    }
-    if (book.authorId !== authorId) {
-      const error = BookErrors[BookErrorCode.BOOK_CANNOT_MODIFY_OTHERS];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
-    }
+    const book = await this.findBookOrThrow(bookId);
+    this.ensureOwnership(book, authorId);
     await this.ensureSeriesOwnershipIfProvided(authorId, dto.seriesId);
 
-    if (dto.title !== undefined) {
-      book.title = dto.title;
-    }
-    if (dto.shortDescription !== undefined) {
-      book.shortDescription = dto.shortDescription;
-    }
-    if (dto.fullDescription !== undefined) {
-      book.fullDescription = dto.fullDescription;
-    }
-    if (dto.pageCount !== undefined) {
-      book.pageCount = dto.pageCount;
-    }
-    if (dto.ageRating !== undefined) {
-      book.ageRating = dto.ageRating;
-    }
-    if (dto.distributionType !== undefined) {
-      book.distributionType = dto.distributionType;
-    }
-    if (dto.totalCopies !== undefined) {
-      const newTotalCopies = dto.totalCopies;
-
-      const approvedApplicationsCount = await this.applicationRepo.count({
-        where: {
-          bookId: bookId,
-          status: ApplicationStatus.APPROVED,
-        },
-      });
-
-      if (newTotalCopies < approvedApplicationsCount) {
-        const error = BookErrors[BookErrorCode.BOOK_INVALID_COPIES];
-        throw new BadRequestException({
-          message: `Total copies (${newTotalCopies}) cannot be less than the number of approved applications (${approvedApplicationsCount})`,
-          code: error.code,
-        });
-      }
-
-      const newAvailableCopies = newTotalCopies - approvedApplicationsCount;
-
-      book.totalCopies = newTotalCopies;
-      book.availableCopies = newAvailableCopies;
-
-      this.logger.log(
-        `Book ${bookId}: Updated total copies to ${newTotalCopies}, available copies set to ${newAvailableCopies} (${approvedApplicationsCount} approved applications)`,
-      );
-    } else if (dto.availableCopies !== undefined) {
-      const approvedApplicationsCount = await this.applicationRepo.count({
-        where: {
-          bookId: bookId,
-          status: ApplicationStatus.APPROVED,
-        },
-      });
-
-      const maxAvailableCopies = book.totalCopies - approvedApplicationsCount;
-
-      if (dto.availableCopies > maxAvailableCopies) {
-        const error = BookErrors[BookErrorCode.BOOK_INVALID_COPIES];
-        throw new BadRequestException({
-          message: `Available copies (${dto.availableCopies}) cannot exceed total copies (${book.totalCopies}) minus approved applications (${approvedApplicationsCount}). Maximum available: ${maxAvailableCopies}`,
-          code: error.code,
-        });
-      }
-
-      book.availableCopies = dto.availableCopies;
-    }
-    if (dto.selectionCriteria !== undefined) {
-      book.selectionCriteria = dto.selectionCriteria;
-    }
-    if (dto.selectionMethod !== undefined) {
-      book.selectionMethod = dto.selectionMethod;
-    }
-    if (dto.seriesId !== undefined) {
-      book.seriesId = dto.seriesId;
-    }
-    if (dto.seriesOrder !== undefined) {
-      book.seriesOrder = dto.seriesOrder;
-    }
-
-    if (dto.applicationDeadline !== undefined) {
-      const newDeadline = new Date(dto.applicationDeadline);
-      const now = new Date();
-
-      if (book.status === BookStatus.IN_PROGRESS && newDeadline > now) {
-        book.status = BookStatus.ACTIVE;
-        this.logger.log(
-          `Book ${bookId} deadline extended to future date. Reverting status from IN_PROGRESS to ACTIVE.`,
-        );
-      }
-
-      book.applicationDeadline = newDeadline;
-    }
-    if (dto.reviewDeadline !== undefined) {
-      const newReviewDeadline = dto.reviewDeadline
-        ? new Date(dto.reviewDeadline)
-        : null;
-      const now = new Date();
-
-      if (
-        book.status === BookStatus.COMPLETED &&
-        newReviewDeadline &&
-        newReviewDeadline > now
-      ) {
-        book.status = BookStatus.IN_PROGRESS;
-        this.logger.log(
-          `Book ${bookId} review deadline extended to future date. Reverting status from COMPLETED to IN_PROGRESS.`,
-        );
-      }
-
-      book.reviewDeadline = newReviewDeadline;
-    }
-
-    if (
-      book.reviewDeadline &&
-      book.reviewDeadline <= book.applicationDeadline
-    ) {
-      const error = BookErrors[BookErrorCode.BOOK_INVALID_DEADLINE];
-      throw new BadRequestException({
-        message: error.message,
-        code: error.code,
-      });
-    }
-
-    if (book.availableCopies > book.totalCopies || book.availableCopies < 0) {
-      const error = BookErrors[BookErrorCode.BOOK_INVALID_COPIES];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
-    }
+    await this.booksUpdateHelper.updateBookFields(book, dto);
+    await this.booksUpdateHelper.updateCopies(book, dto);
+    await this.booksUpdateHelper.updateDeadlines(book, dto);
+    this.booksUpdateHelper.validateCopies(book);
 
     await this.bookRepo.save(book);
+
     if (dto.genres !== undefined) {
-      await this.bookGenreRepo.delete({ bookId: bookId });
-      if (dto.genres && dto.genres.length) {
-        const genreIds = dto.genres;
-        const genres = await this.genreRepo.find({
-          where: { id: In(genreIds) },
-        });
-        if (genres.length !== genreIds.length) {
-          const foundIds = genres.map((g) => g.id);
-          const missing = genreIds.filter((id) => !foundIds.includes(id));
-          const error = BookErrors[BookErrorCode.BOOK_INVALID_GENRE_IDS];
-          throw new BadRequestException({
-            message: `${error.message}: ${missing.join(', ')}`,
-            code: error.code,
-          });
-        }
-        const bgs = genreIds.map((genreId) =>
-          this.bookGenreRepo.create({ bookId, genreId }),
-        );
-        await this.bookGenreRepo.save(bgs);
-      }
+      await this.booksUpdateHelper.updateGenres(bookId, dto.genres);
     }
 
     return this.findOnePublic(bookId, authorId, authorUserType);
+  }
+
+  private async findBookOrThrow(bookId: string): Promise<Book> {
+    const book = await this.bookRepo.findOne({ where: { id: bookId } });
+    if (!book) {
+      throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
+    }
+    return book;
+  }
+
+  private ensureOwnership(book: Book, authorId: string) {
+    if (book.authorId !== authorId) {
+      throw new ForbiddenException(BookErrors.BOOK_CANNOT_MODIFY_OTHERS);
+    }
   }
 
   async remove(
@@ -466,18 +221,8 @@ export class BooksService {
     bookId: string,
   ) {
     ensureAuthor(authorUserType);
-    const book = await this.bookRepo.findOne({ where: { id: bookId } });
-    if (!book) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
-    }
-    if (book.authorId !== authorId) {
-      const error = BookErrors[BookErrorCode.BOOK_CANNOT_DELETE_OTHERS];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
-    }
+    const book = await this.findBookOrThrow(bookId);
+    this.ensureOwnership(book, authorId);
 
     const deletePromises: Promise<void>[] = [];
 
@@ -502,18 +247,8 @@ export class BooksService {
     bookId: string,
   ) {
     ensureAuthor(authorUserType);
-    const book = await this.bookRepo.findOne({ where: { id: bookId } });
-    if (!book) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
-    }
-    if (book.authorId !== authorId) {
-      const error = BookErrors[BookErrorCode.BOOK_CANNOT_MODIFY_OTHERS];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
-    }
+    const book = await this.findBookOrThrow(bookId);
+    this.ensureOwnership(book, authorId);
     book.status = BookStatus.ACTIVE;
     book.publishedAt = new Date();
     await this.bookRepo.save(book);
@@ -521,49 +256,24 @@ export class BooksService {
     return this.findOnePublic(bookId, authorId, authorUserType);
   }
 
-  async browse(
-    dto: BrowseBooksDto,
-    userId?: string,
-    userType?: UserType,
-  ): Promise<{
-    data: Book[];
-    total: number;
-    skip: number;
-    take: number;
-    hasMore: boolean;
-  }> {
-    return this.booksQueryService.browse(dto, userId, userType);
+  async browse(query: PaginateQuery, userId?: string, userType?: UserType) {
+    return this.booksQueryHelper.browse(query, userId, userType);
   }
 
   async featured(userId?: string, userType?: UserType): Promise<Book[]> {
-    return this.booksQueryService.featured(userId, userType);
+    return this.booksQueryHelper.featured(userId, userType);
   }
 
-  async recommendedForUser(
-    userId: string,
-    opts?: { skip?: number; take?: number },
-    userType?: UserType,
-  ): Promise<{
-    data: Book[];
-    total: number;
-    skip: number;
-    take: number;
-    hasMore: boolean;
-  }> {
-    return this.booksQueryService.recommendedForUser(userId, opts, userType);
+  async recommendedForUser(userId: string, query: PaginateQuery, userType?: UserType) {
+    return this.booksQueryHelper.recommendedForUser(userId, query, userType);
   }
 
   async trending(
     opts?: { limit?: number },
     userId?: string,
     userType?: UserType,
-  ): Promise<
-    Array<{
-      book: Book;
-      applicationCount: number;
-    }>
-  > {
-    return this.booksQueryService.trending(opts, userId, userType);
+  ): Promise<Array<{ book: Book; applicationCount: number }>> {
+    return this.booksQueryHelper.trending(opts, userId, userType);
   }
 
   async stats(authorId: string, bookId: string) {
@@ -660,21 +370,19 @@ export class BooksService {
     });
 
     if (!book) {
-      const error = BookErrors[BookErrorCode.BOOK_NOT_OWNED_BY_AUTHOR];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(BookErrors.BOOK_NOT_OWNED_BY_AUTHOR);
     }
 
     return book;
   }
 
-  async checkUserApplicationStatus(
-    userId: string,
-    bookId: string,
-  ): Promise<boolean> {
+  async checkUserApplicationStatus(userId: string, bookId: string): Promise<boolean> {
+    if (!userId) return false;
+    
     const application = await this.applicationRepo.findOne({
       where: {
         readerId: userId,
-        bookId: bookId,
+        bookId,
         status: ApplicationStatus.APPROVED,
       },
     });
@@ -686,37 +394,34 @@ export class BooksService {
     userId: string,
     userType: UserType | undefined,
     bookId: string,
-    pagination: BasePaginationDto,
+    query: PaginateQuery,
   ) {
-    const skip = pagination.skip ?? 0;
-    const take = pagination.take ?? 20;
-
     if (userType === UserType.AUTHOR) {
       ensureAuthor(userType);
-      const book = await this.findOneForAuthor(userId, bookId);
-
-      if (!book) {
-        const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-        throw new NotFoundException({
-          message: error.message,
-          code: error.code,
-        });
-      }
-
-      const [reviews, total] = await this.reviewRepo
-        .createQueryBuilder('review')
-        .leftJoinAndSelect('review.application', 'application')
-        .leftJoinAndSelect('application.reader', 'reader')
-        .leftJoinAndSelect('application.book', 'book')
-        .where('application.bookId = :bookId', { bookId })
-        .orderBy('review.createdAt', 'DESC')
-        .skip(skip)
-        .take(take)
-        .getManyAndCount();
-
-      return createPaginatedResponse(reviews, total, skip, take);
+      await this.findOneForAuthor(userId, bookId);
+      return this.getAuthorReviews(bookId, query);
     }
 
+    return this.getReaderReview(userId, bookId, query);
+  }
+
+  private getAuthorReviews(bookId: string, query: PaginateQuery) {
+    const qb = this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoinAndSelect('review.application', 'application')
+      .leftJoinAndSelect('application.reader', 'reader')
+      .leftJoinAndSelect('application.book', 'book')
+      .where('application.bookId = :bookId', { bookId });
+
+    return paginate(query, qb, {
+      sortableColumns: ['createdAt'],
+      defaultSortBy: [['createdAt', 'DESC']],
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
+  }
+
+  private async getReaderReview(userId: string, bookId: string, query: PaginateQuery) {
     const review = await this.reviewRepo.findOne({
       where: {
         application: {
@@ -727,10 +432,18 @@ export class BooksService {
       relations: ['application', 'application.reader', 'application.book'],
     });
 
-    if (!review) {
-      return createPaginatedResponse([], 0, skip, take);
-    }
+    const qb = this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoinAndSelect('review.application', 'application')
+      .leftJoinAndSelect('application.reader', 'reader')
+      .leftJoinAndSelect('application.book', 'book')
+      .where(review ? 'review.id = :reviewId' : '1 = 0', { reviewId: review?.id });
 
-    return createPaginatedResponse([review], 1, skip, take);
+    return paginate(query, qb, {
+      sortableColumns: ['createdAt'],
+      defaultSortBy: [['createdAt', 'DESC']],
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
   }
 }

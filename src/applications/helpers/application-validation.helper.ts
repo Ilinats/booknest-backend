@@ -9,15 +9,14 @@ import { User } from '../../users/entity/user.entity';
 import { Application } from '../entity/application.entity';
 import { ApplicationErrors } from '../errors';
 import { BookErrors } from '../../books/errors/book-errors';
-import { UserErrorCode, UserErrors } from '../../users/errors/user-errors';
+import { UserErrors } from '../../users/errors/user-errors';
 import { ApplicationStatus } from '../enums';
 import { AgeRating, BookStatus } from '../../books/enums';
 
 export class ApplicationValidationHelper {
   static validateUserForApplication(user: User | null): void {
     if (!user) {
-      const error = UserErrors[UserErrorCode.USER_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
 
     if (!user.emailVerified) {

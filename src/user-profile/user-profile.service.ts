@@ -15,7 +15,12 @@ import { UserProfileErrorCode } from './errors';
 import { UserType } from '../users/enums';
 import { UsersService } from '../users/users.service';
 import { UserActivityService } from '../user-activity/user-activity.service';
-import { NotificationTypeEnum } from '../notifications/enums/notification-type.enum';
+import type {
+  SocialMediaLinks,
+  PrivacySettings,
+  NotificationSettings,
+  PublicProfileResponse,
+} from './types';
 
 @Injectable()
 export class UserProfileService {
@@ -118,13 +123,7 @@ export class UserProfileService {
 
   async updateSocialMedia(
     userId: string,
-    socialMedia: {
-      instagram?: string;
-      tiktok?: string;
-      youtube?: string;
-      goodreads?: string;
-      custom?: Array<{ platform: string; url: string }>;
-    },
+    socialMedia: SocialMediaLinks,
   ): Promise<UserProfile> {
     const profile = await this.getProfile(userId);
     profile.socialMedia = socialMedia;
@@ -133,12 +132,7 @@ export class UserProfileService {
 
   async updatePrivacySettings(
     userId: string,
-    settings: {
-      activityPrivacy?: PrivacyLevel;
-      profilePrivacy?: PrivacyLevel;
-      readingListPrivacy?: PrivacyLevel;
-      reviewsPrivacy?: PrivacyLevel;
-    },
+    settings: PrivacySettings,
   ): Promise<UserProfile> {
     const profile = await this.getProfile(userId);
 
@@ -168,11 +162,7 @@ export class UserProfileService {
 
   async updateNotificationSettings(
     userId: string,
-    settings: {
-      notificationsEnabled?: boolean;
-      emailNotifications?: boolean;
-      notificationPreferences?: NotificationTypeEnum[] | null;
-    },
+    settings: NotificationSettings,
   ): Promise<UserProfile> {
     const profile = await this.getProfile(userId);
 
@@ -183,28 +173,7 @@ export class UserProfileService {
   async getPublicProfile(
     usernameOrId: string,
     viewerId?: string,
-  ): Promise<{
-    user: {
-      id: string;
-      username: string | null;
-      firstName: string;
-      lastName: string;
-      userType: string;
-      bio?: string | null;
-      avatarUrl?: string | null;
-      isVerified: boolean;
-      createdAt: Date;
-    };
-    profile: {
-      socialMedia?: any;
-      stats?: any;
-      profilePrivacy?: PrivacyLevel;
-      activityPrivacy?: PrivacyLevel;
-      readingListPrivacy?: PrivacyLevel;
-      reviewsPrivacy?: PrivacyLevel;
-    };
-    isFriend?: boolean;
-  }> {
+  ): Promise<PublicProfileResponse> {
     const isUUID =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         usernameOrId,
@@ -252,10 +221,14 @@ export class UserProfileService {
       throw new NotFoundException(UserProfileErrorCode.PROFILE_PRIVATE);
     }
 
-    let stats: any = null;
+    let stats: Record<string, unknown> | null = null;
     try {
-      stats = await this.usersService.getUserStats(user.id);
-    } catch (e) {}
+      stats = (await this.usersService.getUserStats(
+        user.id,
+      )) as Record<string, unknown>;
+    } catch {
+      // Swallow stats errors; profile itself should still be returned
+    }
 
     return {
       user: {
@@ -270,7 +243,7 @@ export class UserProfileService {
         createdAt: user.createdAt,
       },
       profile: {
-        socialMedia: profile.socialMedia,
+        socialMedia: profile.socialMedia ?? undefined,
         stats: stats || undefined,
         profilePrivacy: profile.profilePrivacy,
         activityPrivacy: profile.activityPrivacy,
@@ -282,17 +255,31 @@ export class UserProfileService {
   }
 
   private checkProfileVisibility(
-    privacy: string,
+    privacy: PrivacyLevel,
     isFriend: boolean,
     isOwner: boolean,
     isAuthor: boolean = false,
   ): boolean {
-    if (isOwner) return true;
+    if (isOwner) {
+      return true;
+    }
 
-    if (isAuthor) return true;
-    if (privacy === 'public') return true;
-    if (privacy === 'friends' && isFriend) return true;
-    if (privacy === 'private') return false;
+    if (isAuthor) {
+      return true;
+    }
+
+    if (privacy === PrivacyLevel.PUBLIC) {
+      return true;
+    }
+
+    if (privacy === PrivacyLevel.FRIENDS && isFriend) {
+      return true;
+    }
+
+    if (privacy === PrivacyLevel.PRIVATE) {
+      return false;
+    }
+
     return false;
   }
 
@@ -321,15 +308,15 @@ export class UserProfileService {
 
     const profile = await this.getProfile(targetUserId);
 
-    if (profile.profilePrivacy === 'public') {
+    if (profile.profilePrivacy === PrivacyLevel.PUBLIC) {
       return { canView: true };
     }
 
-    if (profile.profilePrivacy === 'private') {
+    if (profile.profilePrivacy === PrivacyLevel.PRIVATE) {
       return { canView: false, reason: 'Profile is private' };
     }
 
-    if (profile.profilePrivacy === 'friends') {
+    if (profile.profilePrivacy === PrivacyLevel.FRIENDS) {
       const areFriends = await this.friendsService.areFriends(
         viewerId,
         targetUserId,
@@ -356,15 +343,15 @@ export class UserProfileService {
 
     const profile = await this.getProfile(targetUserId);
 
-    if (profile.activityPrivacy === 'public') {
+    if (profile.activityPrivacy === PrivacyLevel.PUBLIC) {
       return { canView: true };
     }
 
-    if (profile.activityPrivacy === 'private') {
+    if (profile.activityPrivacy === PrivacyLevel.PRIVATE) {
       return { canView: false, reason: 'Activity is private' };
     }
 
-    if (profile.activityPrivacy === 'friends') {
+    if (profile.activityPrivacy === PrivacyLevel.FRIENDS) {
       const areFriends = await this.friendsService.areFriends(
         viewerId,
         targetUserId,

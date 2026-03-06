@@ -8,7 +8,7 @@ import { Book } from '../../books/entity';
 import { User } from '../../users/entity/user.entity';
 import { Application } from '../entity/application.entity';
 import { ApplicationErrors } from '../errors';
-import { BookErrorCode, BookErrors } from '../../books/errors/book-errors';
+import { BookErrors } from '../../books/errors/book-errors';
 import { UserErrorCode, UserErrors } from '../../users/errors/user-errors';
 import { ApplicationStatus } from '../enums';
 import { AgeRating, BookStatus } from '../../books/enums';
@@ -108,9 +108,7 @@ export class ApplicationValidationHelper {
 
   static validateBookOwnership(book: Book, authorId: string): void {
     if (book.authorId !== authorId) {
-      throw new ForbiddenException(
-        BookErrors[BookErrorCode.BOOK_NOT_OWNED_BY_AUTHOR],
-      );
+      throw new ForbiddenException(BookErrors.BOOK_NOT_OWNED_BY_AUTHOR);
     }
   }
 

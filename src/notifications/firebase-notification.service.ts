@@ -7,7 +7,7 @@ import * as fs from 'fs';
 export interface NotificationPayload {
   title: string;
   body: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   imageUrl?: string;
 }
 
@@ -121,15 +121,13 @@ export class FirebaseNotificationService {
       const response = await admin.messaging().send(message);
       this.logger.log(`Successfully sent notification: ${response}`);
       return true;
-    } catch (error: any) {
-      this.logger.error(
-        `Error sending notification: ${error.message}`,
-        error.stack,
-      );
+    } catch (error: unknown) {
+      const { message, stack, code } = this.extractFirebaseError(error);
+      this.logger.error(`Error sending notification: ${message}`, stack);
 
       if (
-        error.code === 'messaging/invalid-registration-token' ||
-        error.code === 'messaging/registration-token-not-registered'
+        code === 'messaging/invalid-registration-token' ||
+        code === 'messaging/registration-token-not-registered'
       ) {
         this.logger.warn(`Invalid token, should be removed: ${token}`);
         return false;
@@ -195,10 +193,11 @@ export class FirebaseNotificationService {
         success: response.successCount,
         failure: response.failureCount,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const { message, stack } = this.extractFirebaseError(error);
       this.logger.error(
-        `Error sending multicast notification: ${error.message}`,
-        error.stack,
+        `Error sending multicast notification: ${message}`,
+        stack,
       );
       return { success: 0, failure: tokens.length };
     }
@@ -234,12 +233,42 @@ export class FirebaseNotificationService {
       const response = await admin.messaging().send(message);
       this.logger.log(`Successfully sent topic notification: ${response}`);
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const { message, stack } = this.extractFirebaseError(error);
       this.logger.error(
-        `Error sending topic notification: ${error.message}`,
-        error.stack,
+        `Error sending topic notification: ${message}`,
+        stack,
       );
       return false;
     }
+  }
+
+  private extractFirebaseError(error: unknown): {
+    message: string;
+    stack?: string;
+    code?: string;
+  } {
+    if (error && typeof error === 'object') {
+      const typedError = error as {
+        message?: unknown;
+        stack?: unknown;
+        code?: unknown;
+      };
+
+      return {
+        message:
+          typeof typedError.message === 'string'
+            ? typedError.message
+            : String(error),
+        stack:
+          typeof typedError.stack === 'string'
+            ? typedError.stack
+            : undefined,
+        code:
+          typeof typedError.code === 'string' ? typedError.code : undefined,
+      };
+    }
+
+    return { message: String(error) };
   }
 }

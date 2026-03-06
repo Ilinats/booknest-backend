@@ -27,7 +27,7 @@ import {
   UpdateApplicationCompleteDto,
 } from './dto';
 import { ApplicationErrors } from './errors';
-import { BookErrorCode, BookErrors } from '../books/errors/book-errors';
+import { BookErrors } from '../books/errors/book-errors';
 import { ensureAuthor } from '../common/utils/auth.util';
 import { UserType } from '../users/enums';
 import { UserActivityService } from '../user-activity/user-activity.service';
@@ -563,7 +563,7 @@ export class ApplicationsService {
   private async getBookOrThrow(bookId: string): Promise<Book> {
     const book = await this.bookRepo.findOne({ where: { id: bookId } });
     if (!book) {
-      throw new NotFoundException(BookErrors[BookErrorCode.BOOK_NOT_FOUND]);
+      throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
     }
     return book;
   }
@@ -666,9 +666,7 @@ export class ApplicationsService {
     authorNotes?: string,
   ): Promise<void> {
     if (!isAuthor) {
-      throw new ForbiddenException(
-        BookErrors[BookErrorCode.AUTHOR_ACCESS_REQUIRED],
-      );
+      throw new ForbiddenException(BookErrors.AUTHOR_ACCESS_REQUIRED);
     }
 
     ApplicationValidationHelper.validateApplicationStatus(
@@ -771,9 +769,7 @@ export class ApplicationsService {
     application: Application,
   ): void {
     if (!isAuthor) {
-      throw new ForbiddenException(
-        BookErrors[BookErrorCode.AUTHOR_ACCESS_REQUIRED],
-      );
+      throw new ForbiddenException(BookErrors.AUTHOR_ACCESS_REQUIRED);
     }
 
     ApplicationValidationHelper.validateApplicationStatus(

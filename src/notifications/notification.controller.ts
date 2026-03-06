@@ -22,6 +22,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { NotificationService } from './notification.service';
 import { getUserId } from '../common';
 import { FindNotificationsDto } from './dto/find-notifications.dto';
+import { Request as ExpressRequest } from 'express';
 
 @ApiTags('Notifications')
 @Controller('notifications')
@@ -43,7 +44,7 @@ export class NotificationsController {
     }),
   )
   async getNotifications(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Query() dto: FindNotificationsDto,
   ) {
     const userId = getUserId(req);
@@ -54,7 +55,7 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Get unread notification count (Authenticated)' })
   @ApiResponse({ status: 200, description: 'Unread notification count' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getUnreadCount(@Request() req: any) {
+  async getUnreadCount(@Request() req: ExpressRequest) {
     const userId = getUserId(req);
     const count = await this.notificationService.getUnreadCount(userId);
     return { count };
@@ -65,7 +66,7 @@ export class NotificationsController {
   @ApiResponse({ status: 200, description: 'Notification marked as read' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async markAsRead(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Param('notificationId', ParseUUIDPipe) notificationId: string,
   ) {
     const userId = getUserId(req);
@@ -76,7 +77,7 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Mark all notifications as read (Authenticated)' })
   @ApiResponse({ status: 200, description: 'All notifications marked as read' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async markAllAsRead(@Request() req: any) {
+  async markAllAsRead(@Request() req: ExpressRequest) {
     const userId = getUserId(req);
     await this.notificationService.markAllAsRead(userId);
     return { message: 'All notifications marked as read' };
@@ -89,7 +90,7 @@ export class NotificationsController {
     description: 'All notifications deleted successfully',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async deleteAllNotifications(@Request() req: any) {
+  async deleteAllNotifications(@Request() req: ExpressRequest) {
     const userId = getUserId(req);
     await this.notificationService.deleteAllNotifications(userId);
     return { message: 'All notifications deleted' };
@@ -103,7 +104,7 @@ export class NotificationsController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async deleteNotification(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Param('notificationId', ParseUUIDPipe) notificationId: string,
   ) {
     const userId = getUserId(req);

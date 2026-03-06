@@ -50,7 +50,7 @@ export class SeriesController {
   })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   create(@CurrentUser() user: JwtPayload, @Body() dto: CreateSeriesDto) {
-    return this.seriesService.create(user.sub, user.userType as any, dto);
+    return this.seriesService.create(user.sub, user.userType, dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -88,7 +88,12 @@ export class SeriesController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateSeriesDto,
   ) {
-    return this.seriesService.update(user.sub, user.userType as any, id, dto);
+    return this.seriesService.update(
+      user.sub,
+      user.userType,
+      id,
+      dto,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -106,6 +111,6 @@ export class SeriesController {
     @CurrentUser() user: JwtPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
   ) {
-    return this.seriesService.remove(user.sub, user.userType as any, id);
+    return this.seriesService.remove(user.sub, user.userType, id);
   }
 }

@@ -1,11 +1,11 @@
 import {
   ForbiddenException,
-  Injectable,
-  NotFoundException,
   Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
   Optional,
   forwardRef,
-  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -20,6 +20,7 @@ import { ReadingStatus, ApplicationStatus } from '../applications/enums';
 import { UserType } from '../users/enums';
 import { ReviewErrorCode } from './errors';
 import { UserActivityService } from '../user-activity/user-activity.service';
+import { ReviewType } from './enums';
 
 @Injectable()
 export class ReviewsService {
@@ -35,7 +36,7 @@ export class ReviewsService {
     private readonly userActivityService?: UserActivityService,
   ) {}
 
-  async create(readerId: string, dto: CreateReviewDto) {
+  async create(readerId: string, dto: CreateReviewDto): Promise<Review> {
     const application = await this.applicationRepo.findOne({
       where: { id: dto.applicationId, readerId },
       relations: ['book'],
@@ -61,10 +62,10 @@ export class ReviewsService {
       throw new ForbiddenException(ReviewErrorCode.REVIEW_ALREADY_EXISTS);
     }
 
-    let wordCount: number | null = null;
-    if (dto.reviewType === 'text' && dto.reviewContent) {
-      wordCount = dto.reviewContent.trim().split(/\s+/).length;
-    }
+    const wordCount = this.calculateWordCount(
+      dto.reviewType,
+      dto.reviewContent,
+    );
 
     const review = this.reviewRepo.create({
       applicationId: dto.applicationId,
@@ -116,17 +117,15 @@ export class ReviewsService {
     });
 
     if (review?.application?.book) {
-      const sanitizedBook = { ...review.application.book };
-      delete sanitizedBook.fileUrl;
-      delete sanitizedBook.fileSize;
-      delete sanitizedBook.fileType;
-      review.application.book = sanitizedBook as any;
+      review.application.book = this.sanitizeBookFiles(
+        review.application.book,
+      );
     }
 
     return review;
   }
 
-  async findOne(reviewId: string, userId?: string, userType?: string) {
+  async findOne(reviewId: string, userId?: string): Promise<Review> {
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId },
       relations: [
@@ -150,11 +149,9 @@ export class ReviewsService {
     }
 
     if (!isAuthor && review.application.book) {
-      const sanitizedBook = { ...review.application.book };
-      delete sanitizedBook.fileUrl;
-      delete sanitizedBook.fileSize;
-      delete sanitizedBook.fileType;
-      review.application.book = sanitizedBook as any;
+      review.application.book = this.sanitizeBookFiles(
+        review.application.book,
+      );
     }
 
     return review;
@@ -165,7 +162,7 @@ export class ReviewsService {
     userId: string,
     userType: UserType | undefined,
     dto: UpdateReviewDto,
-  ) {
+  ): Promise<Review> {
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId },
       relations: ['application', 'application.book'],
@@ -177,7 +174,8 @@ export class ReviewsService {
 
     const isReader = review.application.readerId === userId;
     const isAuthor =
-      review.application.book.authorId === userId && userType === 'author';
+      review.application.book.authorId === userId &&
+      userType === UserType.AUTHOR;
 
     if (
       dto.rating !== undefined ||
@@ -190,12 +188,10 @@ export class ReviewsService {
         throw new ForbiddenException(ReviewErrorCode.ACCESS_DENIED);
       }
 
-      let wordCount = review.wordCount;
-      if (dto.reviewType === 'text' && dto.reviewContent) {
-        wordCount = dto.reviewContent.trim().split(/\s+/).length;
-      } else if (dto.reviewType === 'link') {
-        wordCount = null;
-      }
+      const wordCount = this.calculateWordCount(
+        dto.reviewType ?? review.reviewType,
+        dto.reviewContent ?? review.reviewContent ?? undefined,
+      );
 
       review.rating = dto.rating ?? review.rating;
       review.reviewType = dto.reviewType ?? review.reviewType;
@@ -208,7 +204,7 @@ export class ReviewsService {
     return this.reviewRepo.save(review);
   }
 
-  async remove(reviewId: string, readerId: string) {
+  async remove(reviewId: string, readerId: string): Promise<void> {
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId },
       relations: ['application'],
@@ -234,10 +230,10 @@ export class ReviewsService {
     bookId: string,
     dto: FindReviewsDto,
     userId?: string,
-    userType?: string,
+    userType?: UserType,
   ) {
     let isAuthor = false;
-    if (userType === 'author' && userId) {
+    if (userType === UserType.AUTHOR && userId) {
       const book = await this.bookRepo.findOne({
         where: { id: bookId, authorId: userId },
       });
@@ -265,27 +261,17 @@ export class ReviewsService {
       .take(take)
       .getManyAndCount();
 
-    const sanitizedReviews = reviews.map((review) => {
-      if (review.application?.book) {
-        const bookAuthorId = review.application.book.authorId;
-        const isAuthor =
-          userId && userType === 'author' && bookAuthorId === userId;
-
-        if (!isAuthor && review.application.book) {
-          const sanitizedBook = { ...review.application.book };
-          delete sanitizedBook.fileUrl;
-          delete sanitizedBook.fileSize;
-          delete sanitizedBook.fileType;
-          review.application.book = sanitizedBook as any;
-        }
-      }
-      return review;
-    });
+    const sanitizedReviews = reviews.map((review) =>
+      this.sanitizeReviewBookForUser(review, userId, userType),
+    );
 
     return createPaginatedResponse(sanitizedReviews, total, skip, take);
   }
 
-  async getUserReviews(userId: string, dto: FindReviewsDto) {
+  async getUserReviews(
+    userId: string,
+    dto: FindReviewsDto,
+  ): Promise<ReturnType<typeof createPaginatedResponse<Review>>> {
     const skip = dto.skip ?? 0;
     const take = dto.take ?? 20;
     const includePrivate = dto.includePrivate ?? true;
@@ -307,16 +293,9 @@ export class ReviewsService {
       .take(take)
       .getManyAndCount();
 
-    const sanitizedReviews = reviews.map((review) => {
-      if (review.application?.book) {
-        const sanitizedBook = { ...review.application.book };
-        delete sanitizedBook.fileUrl;
-        delete sanitizedBook.fileSize;
-        delete sanitizedBook.fileType;
-        review.application.book = sanitizedBook as any;
-      }
-      return review;
-    });
+    const sanitizedReviews = reviews.map((review) =>
+      this.sanitizeReviewBook(review),
+    );
 
     return createPaginatedResponse(sanitizedReviews, total, skip, take);
   }
@@ -325,7 +304,7 @@ export class ReviewsService {
     authorId: string,
     limit: number = 3,
   ): Promise<Review[]> {
-    return await this.reviewRepo
+    return this.reviewRepo
       .createQueryBuilder('review')
       .leftJoinAndSelect('review.application', 'application')
       .leftJoinAndSelect('application.reader', 'reader')
@@ -334,5 +313,53 @@ export class ReviewsService {
       .orderBy('review.createdAt', 'DESC')
       .take(limit)
       .getMany();
+  }
+
+  private calculateWordCount(
+    reviewType: ReviewType,
+    reviewContent?: string,
+  ): number | null {
+    if (reviewType === ReviewType.TEXT && reviewContent) {
+      return reviewContent.trim().split(/\s+/).length;
+    }
+
+    if (reviewType === ReviewType.LINK) {
+      return null;
+    }
+
+    return null;
+  }
+
+  private sanitizeBookFiles(book: Book): Book {
+    const { fileUrl, fileSize, fileType, ...safeBook } = book;
+    return safeBook as Book;
+  }
+
+  private sanitizeReviewBook(review: Review): Review {
+    if (review.application?.book) {
+      review.application.book = this.sanitizeBookFiles(review.application.book);
+    }
+
+    return review;
+  }
+
+  private sanitizeReviewBookForUser(
+    review: Review,
+    userId?: string,
+    userType?: UserType,
+  ): Review {
+    if (!review.application?.book) {
+      return review;
+    }
+
+    const bookAuthorId = review.application.book.authorId;
+    const isAuthor =
+      Boolean(userId) && userType === UserType.AUTHOR && bookAuthorId === userId;
+
+    if (!isAuthor) {
+      review.application.book = this.sanitizeBookFiles(review.application.book);
+    }
+
+    return review;
   }
 }

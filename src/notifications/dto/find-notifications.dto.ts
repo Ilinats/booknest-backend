@@ -6,33 +6,27 @@ import { BasePaginationDto } from '../../common/dto/base-pagination.dto';
 export class FindNotificationsDto extends BasePaginationDto {
   @ApiPropertyOptional({ description: 'Only return unread notifications' })
   @IsOptional()
-  @Transform(({ value, obj, key }) => {
-    const rawValue = obj?.[key] ?? value;
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
 
-    console.log(
-      '[FindNotificationsDto] Transform unreadOnly, raw value:',
-      rawValue,
-      'type:',
-      typeof rawValue,
-      'obj[key]:',
-      obj?.[key],
-      'value:',
-      value,
-    );
+    if (typeof value === 'boolean') {
+      return value;
+    }
 
-    if (rawValue === 'true' || rawValue === '1' || rawValue === true)
+    const normalized =
+      typeof value === 'string' ? value.toLowerCase().trim() : String(value);
+
+    if (normalized === 'true' || normalized === '1') {
       return true;
-    if (
-      rawValue === 'false' ||
-      rawValue === '0' ||
-      rawValue === '' ||
-      rawValue === false
-    )
+    }
+
+    if (normalized === 'false' || normalized === '0') {
       return false;
+    }
 
-    if (rawValue === undefined || rawValue === null) return undefined;
-
-    return Boolean(rawValue);
+    return undefined;
   })
   @IsBoolean()
   unreadOnly?: boolean;

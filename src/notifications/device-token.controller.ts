@@ -1,16 +1,11 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
   Body,
-  Param,
-  UseGuards,
+  Controller,
+  Post,
   Request,
+  UseGuards,
   UsePipes,
   ValidationPipe,
-  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,8 +15,9 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DeviceTokenService } from './device-token.service';
-import { RegisterDeviceTokenDto, UpdateDeviceTokenDto } from './dto';
-import { getUserId, BasePaginationDto } from '../common';
+import { RegisterDeviceTokenDto } from './dto';
+import { getUserId } from '../common';
+import { Request as ExpressRequest } from 'express';
 
 @ApiTags('Device Tokens')
 @Controller('device-tokens')
@@ -39,7 +35,7 @@ export class DeviceTokenController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async registerToken(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Body() dto: RegisterDeviceTokenDto,
   ) {
     const userId = getUserId(req);

@@ -2,8 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DeviceToken } from './entity/device-token.entity';
-import { RegisterDeviceTokenDto, UpdateDeviceTokenDto } from './dto';
-import { BasePaginationDto, createPaginatedResponse } from '../common';
+import { RegisterDeviceTokenDto } from './dto';
 
 @Injectable()
 export class DeviceTokenService {

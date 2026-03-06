@@ -13,6 +13,15 @@ import { Book } from '../../books/entity/book.entity';
 import { Application } from '../../applications/entity/application.entity';
 import { NotificationTypeEnum } from '../enums';
 
+export interface NotificationDataPayload {
+  bookId?: string;
+  applicationId?: string;
+  friendId?: string;
+  authorId?: string;
+  daysUntilDeadline?: number;
+  relatedUserId?: string;
+}
+
 @Entity({ name: 'notifications' })
 @Index(['userId', 'isRead'])
 @Index(['userId', 'createdAt'])
@@ -49,14 +58,7 @@ export class Notification {
   readAt?: Date | null;
 
   @Column({ name: 'data', type: 'jsonb', nullable: true })
-  data?: {
-    bookId?: string;
-    applicationId?: string;
-    friendId?: string;
-    authorId?: string;
-    daysUntilDeadline?: number;
-    [key: string]: any;
-  } | null;
+  data?: NotificationDataPayload | null;
 
   @ManyToOne(() => Book, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'book_id' })

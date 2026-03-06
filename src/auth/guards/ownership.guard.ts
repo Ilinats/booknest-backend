@@ -11,7 +11,7 @@ import { AuthErrors } from '../errors/auth-errors';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Book } from '../../books/entity/book.entity';
-import { BookErrors, BookErrorCode } from 'src/books/errors';
+import { BookErrors } from 'src/books/errors';
 import { ApplicationErrors } from 'src/applications/errors';
 import { ReviewErrorCode } from 'src/reviews/errors';
 import { SeriesErrors, SeriesErrorCode } from 'src/series/errors';
@@ -63,7 +63,7 @@ export class OwnershipGuard implements CanActivate {
       case 'book':
         const book = await this.bookRepo.findOne({ where: { id: resourceId } });
         if (!book) {
-          throw new NotFoundException(BookErrors[BookErrorCode.BOOK_NOT_FOUND]);
+          throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
         }
         isOwner = book.authorId === userId;
         break;

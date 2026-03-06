@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { GenresService } from './genres.service';
 import { Genre } from './entity/genre.entity';
@@ -11,7 +11,7 @@ export class GenresController {
   @Get()
   @ApiOperation({ summary: 'Get all genres' })
   @ApiResponse({ status: 200, description: 'List of genres', type: [Genre] })
-  findAll() {
+  async findAll(): Promise<Genre[]> {
     return this.genresService.findAll();
   }
 }

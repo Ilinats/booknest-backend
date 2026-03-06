@@ -20,7 +20,6 @@ import {
   CurrentUser,
   JwtPayload,
 } from '../auth/decorators/current-user.decorator';
-import { User } from '../users/entity/user.entity';
 import { UserGenrePreferencesService } from './user-genre-preferences.service';
 import { UpsertPreferenceDto } from './dto/upsert-preference.dto';
 
@@ -48,8 +47,7 @@ export class UserGenrePreferencesController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   upsert(@CurrentUser() payload: JwtPayload, @Body() dto: UpsertPreferenceDto) {
-    const user = { id: payload.sub } as User;
-    return this.prefsService.upsert(user, dto.genreId);
+    return this.prefsService.upsert(payload.sub, dto.genreId);
   }
 
   @Delete()

@@ -12,6 +12,8 @@ import { Book } from '../../books/entity/book.entity';
 import { Application } from '../../applications/entity/application.entity';
 import { ActivityType } from '../enums';
 
+export type UserActivityMetadata = Record<string, unknown>;
+
 @Entity({ name: 'user_activities' })
 @Index(['userId', 'createdAt'])
 export class UserActivity {
@@ -36,7 +38,7 @@ export class UserActivity {
   applicationId?: string | null;
 
   @Column({ name: 'metadata', type: 'jsonb', nullable: true })
-  metadata?: Record<string, any> | null;
+  metadata?: UserActivityMetadata | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt!: Date;

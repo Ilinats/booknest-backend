@@ -7,7 +7,7 @@ import {
   Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, In } from 'typeorm';
+import { Repository, FindOptionsWhere } from 'typeorm';
 import { Friend } from './entity/friend.entity';
 import { FriendStatus } from './enums';
 import { User } from '../users/entity/user.entity';
@@ -397,6 +397,9 @@ export class FriendsService {
         return nameA.localeCompare(nameB);
       });
     } else if (sortBy === 'recently_added') {
+      console.warn(
+        'Sorting by recently_added is currently the default order, so this option has no effect',
+      );
     } else if (sortBy === 'most_active') {
       if (this.userActivityService) {
         const friendIds = friends.map((f) => f.user.id);

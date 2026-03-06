@@ -255,7 +255,9 @@ export class UserProfileService {
     let stats: any = null;
     try {
       stats = await this.usersService.getUserStats(user.id);
-    } catch (e) {}
+    } catch {
+      // stats remain null on error
+    }
 
     return {
       user: {

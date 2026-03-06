@@ -5,7 +5,6 @@ import { UserActivity } from './entity/user-activity.entity';
 import { ActivityType } from './enums';
 import { User } from '../users/entity';
 import { UserProfileService } from '../user-profile/user-profile.service';
-import { PrivacyLevel } from '../user-profile/enums';
 import { UserType } from '../users/enums';
 
 @Injectable()
@@ -83,6 +82,7 @@ export class UserActivityService {
           const isAuthor =
             userType === UserType.AUTHOR && activity.book.authorId === userId;
           if (!isAuthor) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { fileUrl, fileSize, fileType, ...bookWithoutFiles } =
               activity.book;
             activity.book = bookWithoutFiles as any;
@@ -94,6 +94,7 @@ export class UserActivityService {
             userType === UserType.AUTHOR &&
             activity.application.book.authorId === userId;
           if (!isAuthor) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { fileUrl, fileSize, fileType, ...bookWithoutFiles } =
               activity.application.book;
             activity.application.book = bookWithoutFiles as any;

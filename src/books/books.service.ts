@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, In, Not, IsNull } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Book } from './entity/book.entity';
 import { Series } from '../series/entity/series.entity';
 import { BookGenre } from './entity/book-genre.entity';

@@ -7,7 +7,6 @@ import {
   Patch,
   Post,
   Delete,
-  Query,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -32,7 +31,6 @@ import {
   CurrentUser,
   JwtPayload,
 } from '../auth/decorators/current-user.decorator';
-import { UserType } from './enums';
 
 @ApiTags('Users')
 @Controller('users')

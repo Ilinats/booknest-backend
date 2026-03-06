@@ -126,7 +126,7 @@ export class ReviewsService {
     return review;
   }
 
-  async findOne(reviewId: string, userId?: string, userType?: string) {
+  async findOne(reviewId: string, userId?: string) {
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId },
       relations: [
@@ -176,8 +176,6 @@ export class ReviewsService {
     }
 
     const isReader = review.application.readerId === userId;
-    const isAuthor =
-      review.application.book.authorId === userId && userType === 'author';
 
     if (
       dto.rating !== undefined ||

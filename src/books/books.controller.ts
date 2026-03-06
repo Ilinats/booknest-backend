@@ -7,7 +7,6 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Put,
   Query,
   UseGuards,
   UsePipes,
@@ -289,48 +288,48 @@ export class BooksController {
       user.userType as UserType,
     );
   }
-  
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(UserType.AUTHOR)
-    @Get('analytics/author')
-    @ApiBearerAuth()
-    @ApiOperation({ summary: 'Get author analytics (Author only)' })
-    @ApiQuery({ type: () => GetAuthorAnalyticsDto })
-    @ApiResponse({ status: 200, description: 'Author analytics' })
-    @ApiResponse({ status: 401, description: 'Unauthorized' })
-    @ApiResponse({
-      status: 403,
-      description: 'Forbidden - Author access required',
-    })
-    @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-    getAuthorAnalytics(
-      @CurrentUser('sub') authorId: string,
-      @Query() dto: GetAuthorAnalyticsDto,
-    ) {
-      return this.booksService.getAuthorAnalytics(authorId, dto.dateRange);
-    }
-  
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(UserType.AUTHOR)
-    @Get('analytics/performance-comparison')
-    @ApiBearerAuth()
-    @ApiOperation({
-      summary: 'Get book performance comparison (Author only)',
-    })
-    @ApiResponse({
-      status: 200,
-      description: 'Book performance comparison data',
-    })
-    @ApiResponse({ status: 401, description: 'Unauthorized' })
-    @ApiResponse({
-      status: 403,
-      description: 'Forbidden - Author access required',
-    })
-    getBookPerformanceComparison(@CurrentUser('sub') authorId: string) {
-      return this.booksService.getBookPerformanceComparison(authorId);
-    }
-    
-    @UseGuards(JwtAuthGuard)
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Get('analytics/author')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get author analytics (Author only)' })
+  @ApiQuery({ type: () => GetAuthorAnalyticsDto })
+  @ApiResponse({ status: 200, description: 'Author analytics' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  getAuthorAnalytics(
+    @CurrentUser('sub') authorId: string,
+    @Query() dto: GetAuthorAnalyticsDto,
+  ) {
+    return this.booksService.getAuthorAnalytics(authorId, dto.dateRange);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Get('analytics/performance-comparison')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get book performance comparison (Author only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Book performance comparison data',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Author access required',
+  })
+  getBookPerformanceComparison(@CurrentUser('sub') authorId: string) {
+    return this.booksService.getBookPerformanceComparison(authorId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':bookId/download')
   @ApiBearerAuth()
   @ApiOperation({
@@ -350,7 +349,7 @@ export class BooksController {
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
   ) {
     const hasApprovedApplication =
-    await this.booksService.checkUserApplicationStatus(user.sub, bookId);
+      await this.booksService.checkUserApplicationStatus(user.sub, bookId);
     if (!hasApprovedApplication) {
       const error = BookErrors[BookErrorCode.BOOK_NO_COPIES_AVAILABLE];
       throw new ForbiddenException({
@@ -364,7 +363,7 @@ export class BooksController {
       user.sub,
       user.userType as UserType,
     );
-    
+
     if (!book.fileUrl) {
       const error = BookErrors[BookErrorCode.BOOK_FILE_NOT_AVAILABLE];
       throw new BadRequestException({
@@ -374,9 +373,9 @@ export class BooksController {
     }
 
     const fileKey = book.fileUrl.split('/').slice(-2).join('/');
-    
+
     const downloadUrl = await this.filesService.getFileDownloadUrl(fileKey);
-    
+
     return {
       downloadUrl,
       expiresIn: 3600,
@@ -403,7 +402,7 @@ export class BooksController {
   ) {
     return this.booksService.stats(authorId, bookId);
   }
-  
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserType.AUTHOR)
   @Get(':bookId/analytics')
@@ -446,7 +445,7 @@ export class BooksController {
   @ApiOperation({
     summary:
       'Get reviews for a book - Authors see all reviews, Readers see only their own',
-    })
+  })
   @ApiQuery({ type: () => BasePaginationDto })
   @ApiResponse({
     status: 200,
@@ -466,23 +465,23 @@ export class BooksController {
       pagination,
     );
   }
-  
-    @UseGuards(OptionalJwtAuthGuard)
-    @Get(':bookId')
-    @ApiOperation({ summary: 'Get book by ID' })
-    @ApiResponse({ status: 200, description: 'Book details', type: Book })
-    @ApiResponse({ status: 404, description: 'Book not found' })
-    getOne(
-      @Param('bookId', new ParseUUIDPipe()) bookId: string,
-      @CurrentUser() user: JwtPayload | undefined,
-    ) {
-      return this.booksService.findOnePublic(
-        bookId,
-        user?.sub,
-        user?.userType as UserType,
-      );
-    }
-  
+
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':bookId')
+  @ApiOperation({ summary: 'Get book by ID' })
+  @ApiResponse({ status: 200, description: 'Book details', type: Book })
+  @ApiResponse({ status: 404, description: 'Book not found' })
+  getOne(
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
+    @CurrentUser() user: JwtPayload | undefined,
+  ) {
+    return this.booksService.findOnePublic(
+      bookId,
+      user?.sub,
+      user?.userType as UserType,
+    );
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserType.AUTHOR)
   @Patch(':bookId')

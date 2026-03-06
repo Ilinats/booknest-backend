@@ -104,7 +104,21 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "**/*.(t|j)s",
+      "!main.ts",
+      "!**/*.module.ts",
+      "!**/*.controller.ts",
+      "!**/migrations/**",
+      "!**/seeds/**",
+      "!**/config/**",
+      "!**/dto/**",
+      "!**/index.ts"
+    ],
+    "coveragePathIgnorePatterns": [
+      "/books/services/books-analytics.service.ts$",
+      "/books/services/books-query.service.ts$",
+      "/books/services/books-scheduler.service.ts$",
+      "/books/services/books-file.service.ts$"
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"

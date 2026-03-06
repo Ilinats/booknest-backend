@@ -10,7 +10,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, LessThan, IsNull } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Application } from './entity/application.entity';
 import { Book } from '../books/entity';
 import { User } from '../users/entity/user.entity';
@@ -28,7 +28,7 @@ import {
   FindApplicationsDto,
   FindBookApplicationsDto,
 } from './dto';
-import { BasePaginationDto, createPaginatedResponse } from '../common';
+import { createPaginatedResponse } from '../common';
 import { ApplicationErrorCode, ApplicationErrors } from './errors';
 import { BookErrorCode, BookErrors } from '../books/errors/book-errors';
 import { UserErrorCode, UserErrors } from '../users/errors/user-errors';
@@ -145,11 +145,11 @@ export class ApplicationsService {
       initialStatus = ApplicationStatus.APPROVED;
       respondedAt = now;
       book.availableCopies -= 1;
-      
+
       if (book.availableCopies === 0 && book.status === BookStatus.ACTIVE) {
         book.status = BookStatus.IN_PROGRESS;
       }
-      
+
       await this.bookRepo.save(book);
       if (book.distributionType === 'digital') {
         copySentAt = now;
@@ -351,11 +351,7 @@ export class ApplicationsService {
     };
   }
 
-  async findOne(
-    applicationId: string,
-    userId: string,
-    userType?: string,
-  ): Promise<Application> {
+  async findOne(applicationId: string, userId: string): Promise<Application> {
     const application = await this.applicationRepo.findOne({
       where: { id: applicationId },
       relations: ['book', 'book.author', 'reader', 'review'],
@@ -733,15 +729,19 @@ export class ApplicationsService {
         'availableCopies',
         1,
       );
-      
+
       const updatedBook = await this.bookRepo.findOne({
         where: { id: application.bookId },
       });
-      if (updatedBook && updatedBook.availableCopies === 0 && updatedBook.status === BookStatus.ACTIVE) {
+      if (
+        updatedBook &&
+        updatedBook.availableCopies === 0 &&
+        updatedBook.status === BookStatus.ACTIVE
+      ) {
         updatedBook.status = BookStatus.IN_PROGRESS;
         await this.bookRepo.save(updatedBook);
       }
-      
+
       if (application.book.distributionType === 'digital') {
         application.copySentAt = new Date();
       }
@@ -831,7 +831,9 @@ export class ApplicationsService {
 
     if (book.selectionMethod === SelectionMethod.LOTTERY) {
       const error =
-        ApplicationErrors[ApplicationErrorCode.APPLICATION_CANNOT_MANAGE_LOTTERY];
+        ApplicationErrors[
+          ApplicationErrorCode.APPLICATION_CANNOT_MANAGE_LOTTERY
+        ];
       throw new BadRequestException({
         message: error.message,
         code: error.code,
@@ -874,13 +876,19 @@ export class ApplicationsService {
         'availableCopies',
         updatedApplications.length,
       );
-      
-      const updatedBook = await this.bookRepo.findOne({ where: { id: bookId } });
-      if (updatedBook && updatedBook.availableCopies === 0 && updatedBook.status === BookStatus.ACTIVE) {
+
+      const updatedBook = await this.bookRepo.findOne({
+        where: { id: bookId },
+      });
+      if (
+        updatedBook &&
+        updatedBook.availableCopies === 0 &&
+        updatedBook.status === BookStatus.ACTIVE
+      ) {
         updatedBook.status = BookStatus.IN_PROGRESS;
         await this.bookRepo.save(updatedBook);
       }
-      
+
       const now = new Date();
       updatedApplications.forEach((app) => {
         if (book.distributionType === 'digital') {
@@ -1255,11 +1263,11 @@ export class ApplicationsService {
       );
 
       book.availableCopies -= winners.length;
-      
+
       if (book.availableCopies === 0 && book.status === BookStatus.ACTIVE) {
         book.status = BookStatus.IN_PROGRESS;
       }
-      
+
       await this.bookRepo.save(book);
 
       if (this.notificationService) {

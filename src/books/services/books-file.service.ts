@@ -54,7 +54,7 @@ export class BooksFileService {
 
     await this.bookRepo.save(book);
 
-    return this.findOnePublic(bookId, authorId, authorUserType);
+    return this.findOnePublic(bookId);
   }
 
   async uploadBookFile(
@@ -192,7 +192,7 @@ export class BooksFileService {
     book.coverImageUrl = null;
     await this.bookRepo.save(book);
 
-    return this.findOnePublic(bookId, authorId, authorUserType);
+    return this.findOnePublic(bookId);
   }
 
   private async findOneForAuthor(
@@ -211,11 +211,7 @@ export class BooksFileService {
     return book;
   }
 
-  private async findOnePublic(
-    bookId: string,
-    userId?: string,
-    userType?: UserType,
-  ): Promise<Book> {
+  private async findOnePublic(bookId: string): Promise<Book> {
     const book = await this.bookRepo.findOne({
       where: { id: bookId },
       relations: ['author', 'series', 'bookGenres', 'bookGenres.genre'],

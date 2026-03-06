@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { UserAddress } from './entity/user-address.entity';
@@ -50,7 +46,8 @@ export class UserAddressService {
     });
 
     if (!address) {
-      const error = UserAddressErrors[UserAddressErrorCode.ADDRESS_ACCESS_DENIED];
+      const error =
+        UserAddressErrors[UserAddressErrorCode.ADDRESS_ACCESS_DENIED];
       throw new NotFoundException({
         message: error.message,
         code: error.code,
@@ -112,7 +109,8 @@ export class UserAddressService {
     });
 
     if (result.affected === 0) {
-      const error = UserAddressErrors[UserAddressErrorCode.ADDRESS_ACCESS_DENIED];
+      const error =
+        UserAddressErrors[UserAddressErrorCode.ADDRESS_ACCESS_DENIED];
       throw new NotFoundException({
         message: error.message,
         code: error.code,

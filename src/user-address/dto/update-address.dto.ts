@@ -38,4 +38,3 @@ export class UpdateAddressDto {
   @IsBoolean()
   isPrimary?: boolean;
 }
-

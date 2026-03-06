@@ -25,9 +25,7 @@ type BasePaginationWithoutSortByAndSearch = Omit<
   'sortBy' | 'search'
 >;
 
-export class BrowseBooksDto
-  extends (BasePaginationDto as any as new () => BasePaginationWithoutSortByAndSearch)
-{
+export class BrowseBooksDto extends (BasePaginationDto as any as new () => BasePaginationWithoutSortByAndSearch) {
   @ApiPropertyOptional({
     description:
       'Filter by genres (genre IDs) - accepts single number or array of numbers',
@@ -132,7 +130,8 @@ export class BrowseBooksDto
   maxAvgRating?: number;
 
   @ApiPropertyOptional({
-    description: 'Search query - searches across title, description, author, series, and genres',
+    description:
+      'Search query - searches across title, description, author, series, and genres',
   })
   @IsOptional()
   @IsString()
@@ -140,7 +139,8 @@ export class BrowseBooksDto
 
   @ApiPropertyOptional({
     enum: ApplicationStatusFilter,
-    description: 'Filter by application status - accepting applications only or all books',
+    description:
+      'Filter by application status - accepting applications only or all books',
   })
   @IsOptional()
   @IsEnum(ApplicationStatusFilter)
@@ -148,7 +148,8 @@ export class BrowseBooksDto
 
   @ApiPropertyOptional({
     enum: DeadlineFilter,
-    description: 'Filter by deadline urgency - ending soon (within 7 days) or still time',
+    description:
+      'Filter by deadline urgency - ending soon (within 7 days) or still time',
   })
   @IsOptional()
   @IsEnum(DeadlineFilter)

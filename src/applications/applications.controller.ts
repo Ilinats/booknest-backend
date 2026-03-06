@@ -263,11 +263,7 @@ export class ApplicationsController {
     @CurrentUser() user: JwtPayload,
     @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
   ) {
-    return this.applicationsService.findOne(
-      applicationId,
-      user.sub,
-      user.userType,
-    );
+    return this.applicationsService.findOne(applicationId, user.sub);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -383,10 +379,7 @@ export class ApplicationsController {
     @CurrentUser('sub') readerId: string,
     @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
   ) {
-    return this.applicationsService.markCopyReceived(
-      applicationId,
-      readerId,
-    );
+    return this.applicationsService.markCopyReceived(applicationId, readerId);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -322,7 +322,7 @@ export class BooksAnalyticsService {
   }
 
   async getAuthorAnalytics(authorId: string, dateRange?: string) {
-    const { startDate, endDate } = this.getDateRange(dateRange);
+    const { startDate } = this.getDateRange(dateRange);
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -1197,7 +1197,7 @@ export class BooksAnalyticsService {
   } {
     const now = new Date();
     let startDate: Date | null = null;
-    let endDate: Date | null = null;
+    const endDate: Date | null = null;
 
     if (dateRange) {
       switch (dateRange.toLowerCase()) {

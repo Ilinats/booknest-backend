@@ -37,7 +37,7 @@ export class RolesGuard implements CanActivate {
 
     const userRole = user.userType;
 
-    if (!userRole || !requiredRoles.includes(userRole as UserType)) {
+    if (!userRole || !requiredRoles.includes(userRole)) {
       let error;
       if (
         requiredRoles.includes(UserType.AUTHOR) ||

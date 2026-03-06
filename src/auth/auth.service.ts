@@ -329,10 +329,6 @@ export class AuthService {
     const payload = { sub: userId, username, email, userType };
     const accessToken = await this.jwtService.signAsync(payload);
 
-    const refreshSecret =
-      this.configService.get<string>('JWT_REFRESH_SECRET') ??
-      (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') +
-        '_refresh';
     const refreshExpiresIn =
       this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
 
@@ -551,7 +547,6 @@ export class AuthService {
 
     if (user.emailVerified) {
       console.log('Email already verified for:', email);
-      const error = AuthErrors[AuthErrorCode.EMAIL_NOT_VERIFIED];
       throw new BadRequestException({
         message: 'Email is already verified',
         code: 'EMAIL_ALREADY_VERIFIED',

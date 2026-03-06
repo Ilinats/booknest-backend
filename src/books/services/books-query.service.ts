@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, MoreThan } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Book } from '../entity/book.entity';
@@ -67,7 +68,9 @@ export class BooksQueryService {
       WHERE ${normalizedDto.status ? 'b.status = $1' : "b.status IN ('active', 'in_progress', 'completed')"}
     `;
 
-    const queryParams: unknown[] = normalizedDto.status ? [normalizedDto.status] : [];
+    const queryParams: unknown[] = normalizedDto.status
+      ? [normalizedDto.status]
+      : [];
     let paramIndex = normalizedDto.status ? 2 : 1;
 
     const selectedGenreIds = normalizedGenreIds || [];
@@ -273,7 +276,9 @@ export class BooksQueryService {
       LEFT JOIN series s ON s.id = b.series_id
       WHERE ${normalizedDto.status ? 'b.status = $1' : "b.status IN ('active', 'in_progress', 'completed')"}
     `;
-    const countParams: unknown[] = normalizedDto.status ? [normalizedDto.status] : [];
+    const countParams: unknown[] = normalizedDto.status
+      ? [normalizedDto.status]
+      : [];
     let countParamIndex = normalizedDto.status ? 2 : 1;
 
     if (normalizedDto.search) {

@@ -11,13 +11,13 @@ import { AuthErrorCode, AuthErrors } from '../../common/errors/auth-errors';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Book } from '../../books/entity/book.entity';
-import { BookErrors, BookErrorCode } from 'src/books/errors';
+import { BookErrors, BookErrorCode } from '../../books/errors';
 import {
   ApplicationErrors,
   ApplicationErrorCode,
-} from 'src/applications/errors';
-import { ReviewErrorCode } from 'src/reviews/errors';
-import { SeriesErrors, SeriesErrorCode } from 'src/series/errors';
+} from '../../applications/errors';
+import { ReviewErrorCode } from '../../reviews/errors';
+import { SeriesErrors, SeriesErrorCode } from '../../series/errors';
 import { Application } from '../../applications/entity/application.entity';
 import { Review } from '../../reviews/entity/review.entity';
 import { Series } from '../../series/entity/series.entity';
@@ -69,7 +69,7 @@ export class OwnershipGuard implements CanActivate {
     let isOwner = false;
 
     switch (ownership.resource) {
-      case 'book':
+      case 'book': {
         const book = await this.bookRepo.findOne({ where: { id: resourceId } });
         if (!book) {
           const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
@@ -80,8 +80,9 @@ export class OwnershipGuard implements CanActivate {
         }
         isOwner = book.authorId === userId;
         break;
+      }
 
-      case 'application':
+      case 'application': {
         const application = await this.applicationRepo.findOne({
           where: { id: resourceId },
           relations: ['book', 'reader'],
@@ -98,8 +99,9 @@ export class OwnershipGuard implements CanActivate {
           application.readerId === userId ||
           application.book.authorId === userId;
         break;
+      }
 
-      case 'review':
+      case 'review': {
         const review = await this.reviewRepo.findOne({
           where: { id: resourceId },
           relations: ['application', 'application.reader', 'application.book'],
@@ -111,8 +113,9 @@ export class OwnershipGuard implements CanActivate {
           review.application.readerId === userId ||
           review.application.book.authorId === userId;
         break;
+      }
 
-      case 'series':
+      case 'series': {
         const series = await this.seriesRepo.findOne({
           where: { id: resourceId },
         });
@@ -125,18 +128,19 @@ export class OwnershipGuard implements CanActivate {
         }
         isOwner = series.authorId === userId;
         break;
+      }
 
       case 'user':
         isOwner = resourceId === userId;
         break;
 
-      default:
-        const error =
-          AuthErrors[AuthErrorCode.INVALID_OWNERSHIP_RESOURCE_TYPE];
+      default: {
+        const error = AuthErrors[AuthErrorCode.INVALID_OWNERSHIP_RESOURCE_TYPE];
         throw new ForbiddenException({
           message: error.message,
           code: error.code,
         });
+      }
     }
 
     if (!isOwner) {

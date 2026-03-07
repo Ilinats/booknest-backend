@@ -8,6 +8,6 @@ describe('AppService', () => {
   });
 
   it('should return Hello World', () => {
-    expect(service.getHello()).toBe('Hello World!');
+    expect(service.getHello()).toBe('fail');
   });
 });

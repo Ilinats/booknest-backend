@@ -19,7 +19,6 @@ export class UserGenrePreferencesService {
       where: { user: { id: userId } },
       relations: { genre: true },
     });
-  }
 
   async upsert(userId: string, genreId: number): Promise<UserGenrePreference> {
     const genre = await this.genreRepository.findOne({

@@ -138,7 +138,7 @@ describe('NotificationService', () => {
         NotificationTypeEnum.FRIEND_REQUEST_RECEIVED,
         'Title',
         'Body',
-        { foo: 'bar' },
+        { foo: 'bar' } as any,
       );
 
       expect(notificationRepository.create).toHaveBeenCalledWith(

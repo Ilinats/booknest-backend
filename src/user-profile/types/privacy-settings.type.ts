@@ -6,4 +6,3 @@ export type PrivacySettings = {
   readingListPrivacy?: PrivacyLevel;
   reviewsPrivacy?: PrivacyLevel;
 };
-

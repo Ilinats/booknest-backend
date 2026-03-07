@@ -5,4 +5,3 @@ export type NotificationSettings = {
   emailNotifications?: boolean;
   notificationPreferences?: NotificationTypeEnum[] | null;
 };
-

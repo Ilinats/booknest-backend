@@ -11,4 +11,3 @@ export type PublicProfileUser = {
   isVerified: boolean;
   createdAt: Date;
 };
-

@@ -9,7 +9,12 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { FriendStatus } from './enums';
+import {
+  FriendStatus,
+  FriendRequestType,
+  FriendsListSortBy,
+} from './enums';
+import { UserType } from '../users/enums';
 import { FriendErrorCode } from './errors';
 import { sanitizeUserPublic } from '../common/utils/user-sanitizer.util';
 import { UserActivityService } from '../user-activity/user-activity.service';
@@ -89,6 +94,10 @@ describe('FriendsService', () => {
 
   describe('sendFriendRequest', () => {
     it('should throw BadRequestException when trying to friend self', async () => {
+      userRepository.findOne.mockResolvedValue({
+        id: 'user-1',
+      } as User);
+
       await expect(
         service.sendFriendRequest('user-1', 'user-1'),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -96,7 +105,7 @@ describe('FriendsService', () => {
 
     it('should throw BadRequestException when requester is author', async () => {
       await expect(
-        service.sendFriendRequest('user-1', 'other', 'author'),
+        service.sendFriendRequest('user-1', 'other', UserType.AUTHOR),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -295,7 +304,7 @@ describe('FriendsService', () => {
       const friends: Friend[] = [] as any;
       friendRepository.find.mockResolvedValue(friends);
 
-      await service.getFriendRequests('user-1', 'sent');
+      await service.getFriendRequests('user-1', FriendRequestType.SENT);
 
       expect(friendRepository.find).toHaveBeenCalledWith({
         where: { requesterId: 'user-1', status: FriendStatus.PENDING },
@@ -418,7 +427,10 @@ describe('FriendsService', () => {
 
       friendRepository.find.mockResolvedValue(friendships);
 
-      const result = await service.getFriendsList('user-1', 'alphabetical');
+      const result = await service.getFriendsList(
+        'user-1',
+        FriendsListSortBy.ALPHABETICAL,
+      );
 
       expect(result.map((u) => u.id)).toEqual(['user-2', 'user-3']);
     });
@@ -457,7 +469,10 @@ describe('FriendsService', () => {
           totalActivities: 5,
         });
 
-      const result = await service.getFriendsList('user-1', 'most_active');
+      const result = await service.getFriendsList(
+        'user-1',
+        FriendsListSortBy.MOST_ACTIVE,
+      );
 
       expect(result.map((u) => u.id)).toEqual(['user-3', 'user-2']);
     });

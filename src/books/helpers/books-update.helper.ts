@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Book } from '../entity/book.entity';
@@ -14,20 +18,30 @@ import { CreateBookDto, UpdateBookDto } from '../dto';
 export class BooksUpdateHelper {
   constructor(
     @InjectRepository(Book) private readonly bookRepo: Repository<Book>,
-    @InjectRepository(BookGenre) private readonly bookGenreRepo: Repository<BookGenre>,
-    @InjectRepository(Application) private readonly applicationRepo: Repository<Application>,
+    @InjectRepository(BookGenre)
+    private readonly bookGenreRepo: Repository<BookGenre>,
+    @InjectRepository(Application)
+    private readonly applicationRepo: Repository<Application>,
     @InjectRepository(Genre) private readonly genreRepo: Repository<Genre>,
   ) {}
 
-  async updateBookFields(book: Book, dto: UpdateBookDto & Partial<CreateBookDto>) {
+  async updateBookFields(
+    book: Book,
+    dto: UpdateBookDto & Partial<CreateBookDto>,
+  ) {
     if (dto.title !== undefined) book.title = dto.title;
-    if (dto.shortDescription !== undefined) book.shortDescription = dto.shortDescription;
-    if (dto.fullDescription !== undefined) book.fullDescription = dto.fullDescription;
+    if (dto.shortDescription !== undefined)
+      book.shortDescription = dto.shortDescription;
+    if (dto.fullDescription !== undefined)
+      book.fullDescription = dto.fullDescription;
     if (dto.pageCount !== undefined) book.pageCount = dto.pageCount;
     if (dto.ageRating !== undefined) book.ageRating = dto.ageRating;
-    if (dto.distributionType !== undefined) book.distributionType = dto.distributionType;
-    if (dto.selectionCriteria !== undefined) book.selectionCriteria = dto.selectionCriteria;
-    if (dto.selectionMethod !== undefined) book.selectionMethod = dto.selectionMethod;
+    if (dto.distributionType !== undefined)
+      book.distributionType = dto.distributionType;
+    if (dto.selectionCriteria !== undefined)
+      book.selectionCriteria = dto.selectionCriteria;
+    if (dto.selectionMethod !== undefined)
+      book.selectionMethod = dto.selectionMethod;
     if (dto.seriesId !== undefined) book.seriesId = dto.seriesId;
     if (dto.seriesOrder !== undefined) book.seriesOrder = dto.seriesOrder;
   }
@@ -35,7 +49,7 @@ export class BooksUpdateHelper {
   async updateCopies(book: Book, dto: UpdateBookDto & Partial<CreateBookDto>) {
     if (dto.totalCopies !== undefined) {
       const approvedCount = await this.getApprovedApplicationsCount(book.id);
-      
+
       if (dto.totalCopies < approvedCount) {
         throw new BadRequestException(
           `Total copies (${dto.totalCopies}) cannot be less than approved applications (${approvedCount})`,
@@ -58,10 +72,13 @@ export class BooksUpdateHelper {
     }
   }
 
-  async updateDeadlines(book: Book, dto: UpdateBookDto & Partial<CreateBookDto>) {
+  async updateDeadlines(
+    book: Book,
+    dto: UpdateBookDto & Partial<CreateBookDto>,
+  ) {
     if (dto.applicationDeadline !== undefined) {
       const newDeadline = new Date(dto.applicationDeadline);
-      
+
       if (book.status === BookStatus.IN_PROGRESS && newDeadline > new Date()) {
         book.status = BookStatus.ACTIVE;
       }
@@ -70,16 +87,25 @@ export class BooksUpdateHelper {
     }
 
     if (dto.reviewDeadline !== undefined) {
-      const newReviewDeadline = dto.reviewDeadline ? new Date(dto.reviewDeadline) : null;
+      const newReviewDeadline = dto.reviewDeadline
+        ? new Date(dto.reviewDeadline)
+        : null;
 
-      if (book.status === BookStatus.COMPLETED && newReviewDeadline && newReviewDeadline > new Date()) {
+      if (
+        book.status === BookStatus.COMPLETED &&
+        newReviewDeadline &&
+        newReviewDeadline > new Date()
+      ) {
         book.status = BookStatus.IN_PROGRESS;
       }
 
       book.reviewDeadline = newReviewDeadline;
     }
 
-    if (book.reviewDeadline && book.reviewDeadline <= book.applicationDeadline) {
+    if (
+      book.reviewDeadline &&
+      book.reviewDeadline <= book.applicationDeadline
+    ) {
       throw new BadRequestException(BookErrors.BOOK_INVALID_DEADLINE);
     }
   }
@@ -88,8 +114,10 @@ export class BooksUpdateHelper {
     await this.bookGenreRepo.delete({ bookId });
 
     if (genres && genres.length > 0) {
-      const foundGenres = await this.genreRepo.find({ where: { id: In(genres) } });
-      
+      const foundGenres = await this.genreRepo.find({
+        where: { id: In(genres) },
+      });
+
       if (foundGenres.length !== genres.length) {
         const foundIds = foundGenres.map((g) => g.id);
         const missing = genres.filter((id) => !foundIds.includes(id));
@@ -120,4 +148,3 @@ export class BooksUpdateHelper {
     });
   }
 }
-

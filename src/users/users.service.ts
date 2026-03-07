@@ -20,11 +20,7 @@ import {
   UserPublicResponseDto,
   UserProfileResponseDto,
 } from './dto';
-import {
-  sanitizeUser,
-  sanitizeUserPublic,
-  createPaginatedResponse,
-} from '../common';
+import { sanitizeUser, sanitizeUserPublic } from '../common';
 import { UserErrors } from './errors/user-errors';
 import { ApplicationStatus } from '../applications/enums';
 import { ReadingStatus } from '../applications/enums';
@@ -71,7 +67,6 @@ export class UsersService {
   async findOneById(id: string): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id } });
     if (!user) {
-      const error = UserErrors.USER_NOT_FOUND;
       throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
     return user;
@@ -133,7 +128,6 @@ export class UsersService {
   async remove(id: string): Promise<void> {
     const res = await this.usersRepository.delete(id);
     if (!res.affected) {
-      const error = UserErrors.USER_NOT_FOUND;
       throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
   }
@@ -141,7 +135,6 @@ export class UsersService {
   async getProfile(userId: string): Promise<UserProfileResponseDto> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
-      const error = UserErrors.USER_NOT_FOUND;
       throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
 
@@ -253,7 +246,6 @@ export class UsersService {
   async getUserStats(userId: string): Promise<Record<string, unknown>> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
-      const error = UserErrors.USER_NOT_FOUND;
       throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
 
@@ -623,7 +615,7 @@ export class UsersService {
       select: ['appliedAt', 'respondedAt'],
     });
 
-    if (applications.length === 0) {
+    if (!applications || applications.length === 0) {
       return 0;
     }
 

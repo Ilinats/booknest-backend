@@ -64,7 +64,6 @@ describe('OwnershipGuard', () => {
     applicationRepo = createMockRepo();
     reviewRepo = createMockRepo();
     seriesRepo = createMockRepo();
-    userRepo = createMockRepo();
 
     guard = new OwnershipGuard(
       reflector,
@@ -72,7 +71,6 @@ describe('OwnershipGuard', () => {
       applicationRepo as any,
       reviewRepo as any,
       seriesRepo as any,
-      userRepo as any,
     );
   });
 

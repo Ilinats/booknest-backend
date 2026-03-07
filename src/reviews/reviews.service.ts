@@ -117,9 +117,7 @@ export class ReviewsService {
     });
 
     if (review?.application?.book) {
-      review.application.book = this.sanitizeBookFiles(
-        review.application.book,
-      );
+      review.application.book = this.sanitizeBookFiles(review.application.book);
     }
 
     return review;
@@ -149,9 +147,7 @@ export class ReviewsService {
     }
 
     if (!isAuthor && review.application.book) {
-      review.application.book = this.sanitizeBookFiles(
-        review.application.book,
-      );
+      review.application.book = this.sanitizeBookFiles(review.application.book);
     }
 
     return review;
@@ -173,9 +169,6 @@ export class ReviewsService {
     }
 
     const isReader = review.application.readerId === userId;
-    const isAuthor =
-      review.application.book.authorId === userId &&
-      userType === UserType.AUTHOR;
 
     if (
       dto.rating !== undefined ||
@@ -331,6 +324,7 @@ export class ReviewsService {
   }
 
   private sanitizeBookFiles(book: Book): Book {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { fileUrl, fileSize, fileType, ...safeBook } = book;
     return safeBook as Book;
   }
@@ -354,7 +348,9 @@ export class ReviewsService {
 
     const bookAuthorId = review.application.book.authorId;
     const isAuthor =
-      Boolean(userId) && userType === UserType.AUTHOR && bookAuthorId === userId;
+      Boolean(userId) &&
+      userType === UserType.AUTHOR &&
+      bookAuthorId === userId;
 
     if (!isAuthor) {
       review.application.book = this.sanitizeBookFiles(review.application.book);

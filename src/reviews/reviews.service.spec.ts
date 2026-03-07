@@ -252,9 +252,9 @@ describe('ReviewsService', () => {
 
       reviewRepo.findOne.mockResolvedValue(review);
 
-      await expect(
-        service.findOne('rev-1', 'user-1', 'reader'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.findOne('rev-1', 'user-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('should sanitize book for non-author', async () => {
@@ -275,7 +275,7 @@ describe('ReviewsService', () => {
 
       reviewRepo.findOne.mockResolvedValue(review);
 
-      const result = await service.findOne('rev-1', 'user-1', 'reader');
+      const result = await service.findOne('rev-1', 'user-1');
 
       expect(result.application.book.fileUrl).toBeUndefined();
       expect(result.application.book.fileSize).toBeUndefined();
@@ -455,7 +455,7 @@ describe('ReviewsService', () => {
         'book-1',
         dto,
         'user-1',
-        'reader',
+        UserType.READER,
       );
 
       expect(qbMock.andWhere).toHaveBeenCalledWith(
@@ -506,7 +506,7 @@ describe('ReviewsService', () => {
         'book-1',
         dto,
         'author-1',
-        'author',
+        UserType.AUTHOR,
       );
 
       expect(qbMock.andWhere).not.toHaveBeenCalled();
@@ -549,7 +549,7 @@ describe('ReviewsService', () => {
         'book-1',
         dto,
         'reader-1',
-        'reader',
+        UserType.READER,
       );
 
       expect(result.data).toHaveLength(1);

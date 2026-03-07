@@ -271,7 +271,7 @@ describe('UsersService', () => {
       const result = await service.getProfile('u1');
 
       expect(result).toHaveProperty('stats');
-      expect(result.stats.userType).toBe(UserType.READER);
+      expect((result.stats as any).userType).toBe(UserType.READER);
     });
   });
 
@@ -612,7 +612,7 @@ describe('UsersService', () => {
       usersRepository.findOne.mockResolvedValue(null);
 
       await expect(
-        service.getAuthorStats('a1', 'req', 'reader'),
+        service.getAuthorStats('a1', 'req', UserType.READER),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 

@@ -9,11 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { Friend } from './entity/friend.entity';
-import {
-  FriendRequestType,
-  FriendStatus,
-  FriendsListSortBy,
-} from './enums';
+import { FriendRequestType, FriendStatus, FriendsListSortBy } from './enums';
 import { User } from '../users/entity/user.entity';
 import { FriendErrorCode } from './errors';
 import { sanitizeUserPublic } from '../common/utils/user-sanitizer.util';
@@ -604,9 +600,7 @@ export class FriendsService {
     });
   }
 
-  private async buildActivityMap(
-    friendIds: string[],
-  ): Promise<
+  private async buildActivityMap(friendIds: string[]): Promise<
     Map<
       string,
       {

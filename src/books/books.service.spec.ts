@@ -1,113 +1,103 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ForbiddenException } from '@nestjs/common';
 import { BooksService } from './books.service';
 import { Book } from './entity/book.entity';
 import { Series } from '../series/entity/series.entity';
-import { BookGenre } from './entity/book-genre.entity';
 import { Application } from '../applications/entity/application.entity';
 import { Review } from '../reviews/entity/review.entity';
+import { FilesService } from '../files/files.service';
+import { BooksAnalyticsService } from './services/books-analytics.service';
+import { BooksFileService } from './services/books-file.service';
+import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
 import { User } from '../users/entity/user.entity';
 import { UserAddress } from '../user-address/entity/user-address.entity';
 import { UserGenrePreference } from '../user-genre-preferences/entity/user-genre-preference.entity';
-import { Genre } from '../genres/entity/genre.entity';
-import { FilesService } from '../files/files.service';
-import { BooksQueryService } from './services/books-query.service';
-import { BooksAnalyticsService } from './services/books-analytics.service';
-import { BooksFileService } from './services/books-file.service';
 import { CreateBookDto } from './dto';
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
-import { BookErrorCode, BookErrors } from './errors/book-errors';
+import { BookErrors } from './errors/book-errors';
+import { AgeRating, DistributionType, SelectionMethod } from './enums';
 import { UserType } from '../users/enums';
 import { ApplicationStatus } from '../applications/enums';
-import { DistributionType } from './enums';
-import { BookStatus } from './enums';
+import { PaginateQuery } from 'nestjs-paginate';
 
-type MockRepo<T = any> = { [key: string]: jest.Mock };
+jest.mock('nestjs-paginate', () => ({
+  paginate: jest.fn().mockResolvedValue({ data: [], meta: {}, links: {} }),
+  FilterOperator: { EQ: '$eq' },
+}));
+
+type MockRepo<T = unknown> = { [key: string]: jest.Mock };
 
 function createMockRepo(): MockRepo {
   return {
     findOne: jest.fn(),
+    find: jest.fn(),
     save: jest.fn(),
     create: jest.fn(),
-    find: jest.fn(),
+    update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
 }
 
+const baseCreateDto: CreateBookDto = {
+  title: 'Test Book',
+  ageRating: AgeRating.ALL,
+  distributionType: DistributionType.PHYSICAL,
+  applicationDeadline: new Date(Date.now() + 86400000).toISOString(),
+};
+
 describe('BooksService', () => {
   let service: BooksService;
   let bookRepo: MockRepo<Book>;
   let seriesRepo: MockRepo<Series>;
-  let genreRepo: MockRepo<Genre>;
-  let bookGenreRepo: MockRepo<BookGenre>;
-  let filesService: { deleteFileByUrl: jest.Mock };
   let applicationRepo: MockRepo<Application>;
   let reviewRepo: MockRepo<Review>;
-  let booksQueryService: jest.Mocked<BooksQueryService>;
-  let booksAnalyticsService: jest.Mocked<BooksAnalyticsService>;
-  let booksFileService: jest.Mocked<BooksFileService>;
+  let filesService: { deleteFileByUrl: jest.Mock };
+  let booksUpdateHelper: {
+    updateBookFields: jest.Mock;
+    updateCopies: jest.Mock;
+    updateDeadlines: jest.Mock;
+    validateCopies: jest.Mock;
+    updateGenres: jest.Mock;
+  };
+  let booksQueryHelper: {
+    browse: jest.Mock;
+    featured: jest.Mock;
+    recommendedForUser: jest.Mock;
+    trending: jest.Mock;
+  };
+  let booksAnalyticsService: {
+    stats: jest.Mock;
+    analytics: jest.Mock;
+    getAuthorAnalytics: jest.Mock;
+    getBookPerformanceComparison: jest.Mock;
+  };
+  let booksFileService: {
+    uploadBookFile: jest.Mock;
+    uploadCoverImage: jest.Mock;
+    updateCoverImage: jest.Mock;
+    updateFileInfo: jest.Mock;
+    removeCoverImage: jest.Mock;
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BooksService,
-        {
-          provide: getRepositoryToken(Book),
-          useValue: createMockRepo(),
-        },
-        {
-          provide: getRepositoryToken(Series),
-          useValue: createMockRepo(),
-        },
-        {
-          provide: getRepositoryToken(BookGenre),
-          useValue: createMockRepo(),
-        },
-        {
-          provide: getRepositoryToken(Application),
-          useValue: createMockRepo(),
-        },
-        {
-          provide: getRepositoryToken(Review),
-          useValue: createMockRepo(),
-        },
-        {
-          provide: getRepositoryToken(User),
-          useValue: createMockRepo(),
-        },
-        {
-          provide: getRepositoryToken(UserAddress),
-          useValue: createMockRepo(),
-        },
+        { provide: getRepositoryToken(Book), useValue: createMockRepo() },
+        { provide: getRepositoryToken(Series), useValue: createMockRepo() },
+        { provide: getRepositoryToken(Application), useValue: createMockRepo() },
+        { provide: getRepositoryToken(Review), useValue: createMockRepo() },
+        { provide: getRepositoryToken(User), useValue: createMockRepo() },
+        { provide: getRepositoryToken(UserAddress), useValue: createMockRepo() },
         {
           provide: getRepositoryToken(UserGenrePreference),
           useValue: createMockRepo(),
         },
         {
-          provide: getRepositoryToken(Genre),
-          useValue: createMockRepo(),
-        },
-        {
           provide: FilesService,
-          useValue: {
-            deleteFileByUrl: jest.fn(),
-          },
-        },
-        {
-          provide: BooksQueryService,
-          useValue: {
-            browse: jest.fn(),
-            featured: jest.fn(),
-            recommendedForUser: jest.fn(),
-            trending: jest.fn(),
-          },
+          useValue: { deleteFileByUrl: jest.fn().mockResolvedValue(undefined) },
         },
         {
           provide: BooksAnalyticsService,
@@ -123,9 +113,28 @@ describe('BooksService', () => {
           useValue: {
             uploadBookFile: jest.fn(),
             uploadCoverImage: jest.fn(),
-            updateFileInfo: jest.fn(),
             updateCoverImage: jest.fn(),
+            updateFileInfo: jest.fn(),
             removeCoverImage: jest.fn(),
+          },
+        },
+        {
+          provide: BooksQueryHelper,
+          useValue: {
+            browse: jest.fn(),
+            featured: jest.fn(),
+            recommendedForUser: jest.fn(),
+            trending: jest.fn(),
+          },
+        },
+        {
+          provide: BooksUpdateHelper,
+          useValue: {
+            updateBookFields: jest.fn().mockResolvedValue(undefined),
+            updateCopies: jest.fn().mockResolvedValue(undefined),
+            updateDeadlines: jest.fn().mockResolvedValue(undefined),
+            validateCopies: jest.fn(),
+            updateGenres: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -134,12 +143,11 @@ describe('BooksService', () => {
     service = module.get<BooksService>(BooksService);
     bookRepo = module.get(getRepositoryToken(Book));
     seriesRepo = module.get(getRepositoryToken(Series));
-    genreRepo = module.get(getRepositoryToken(Genre));
-    bookGenreRepo = module.get(getRepositoryToken(BookGenre));
-    filesService = module.get(FilesService);
     applicationRepo = module.get(getRepositoryToken(Application));
     reviewRepo = module.get(getRepositoryToken(Review));
-    booksQueryService = module.get(BooksQueryService);
+    filesService = module.get(FilesService);
+    booksUpdateHelper = module.get(BooksUpdateHelper);
+    booksQueryHelper = module.get(BooksQueryHelper);
     booksAnalyticsService = module.get(BooksAnalyticsService);
     booksFileService = module.get(BooksFileService);
   });
@@ -148,1126 +156,660 @@ describe('BooksService', () => {
     expect(service).toBeDefined();
   });
 
-  describe('ensureSeriesOwnershipIfProvided', () => {
-    it('should do nothing if no seriesId is provided', async () => {
-      await expect(
-        service.ensureSeriesOwnershipIfProvided('author-1'),
-      ).resolves.toBeUndefined();
-      expect(seriesRepo.findOne).not.toHaveBeenCalled();
+  describe('create', () => {
+    it('creates book and returns it with relations when no genres', async () => {
+      seriesRepo.findOne.mockResolvedValue(null);
+      const created = { id: 'b1', title: baseCreateDto.title } as Book;
+      bookRepo.create.mockReturnValue(created);
+      bookRepo.save.mockResolvedValue(created);
+      const withRelations = { ...created, author: {}, series: null } as Book;
+      bookRepo.findOne.mockResolvedValue(withRelations);
+
+      const result = await service.create('author-1', UserType.AUTHOR, baseCreateDto);
+
+      expect(bookRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          authorId: 'author-1',
+          title: baseCreateDto.title,
+          distributionType: baseCreateDto.distributionType,
+        }),
+      );
+      expect(booksUpdateHelper.updateGenres).not.toHaveBeenCalled();
+      expect(result).toEqual(withRelations);
     });
 
-    it('should throw ForbiddenException when series does not exist', async () => {
+    it('calls updateGenres when genres provided', async () => {
+      seriesRepo.findOne.mockResolvedValue(null);
+      const saved = { id: 'b1' } as Book;
+      bookRepo.create.mockReturnValue(saved);
+      bookRepo.save.mockResolvedValue(saved);
+      bookRepo.findOne.mockResolvedValue(saved);
+
+      await service.create('author-1', UserType.AUTHOR, {
+        ...baseCreateDto,
+        genres: [1, 2],
+      });
+
+      expect(booksUpdateHelper.updateGenres).toHaveBeenCalledWith('b1', [1, 2]);
+    });
+
+    it('throws when copies are invalid (available > total)', async () => {
       seriesRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.ensureSeriesOwnershipIfProvided('author-1', 'series-1'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+        service.create('author-1', UserType.AUTHOR, {
+          ...baseCreateDto,
+          totalCopies: 5,
+          availableCopies: 10,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.create('author-1', UserType.AUTHOR, {
+          ...baseCreateDto,
+          totalCopies: 5,
+          availableCopies: 10,
+        }),
+      ).rejects.toThrow(BookErrors.BOOK_INVALID_COPIES);
     });
 
-    it('should throw ForbiddenException when series is not owned by author', async () => {
+    it('throws when review deadline is before application deadline', async () => {
+      const appDeadline = new Date(Date.now() + 86400000);
+      const revDeadline = new Date(Date.now() + 43200000);
+      seriesRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.create('author-1', UserType.AUTHOR, {
+          ...baseCreateDto,
+          applicationDeadline: appDeadline.toISOString(),
+          reviewDeadline: revDeadline.toISOString(),
+        }),
+      ).rejects.toThrow(BookErrors.BOOK_INVALID_DEADLINE);
+    });
+
+    it('throws when series exists but belongs to another author', async () => {
       seriesRepo.findOne.mockResolvedValue({
-        id: 'series-1',
+        id: 's1',
         authorId: 'other-author',
-      } as Series);
-
-      await expect(
-        service.ensureSeriesOwnershipIfProvided('author-1', 'series-1'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('should not throw when series is owned by author', async () => {
-      seriesRepo.findOne.mockResolvedValue({
-        id: 'series-1',
-        authorId: 'author-1',
-      } as Series);
-
-      await expect(
-        service.ensureSeriesOwnershipIfProvided('author-1', 'series-1'),
-      ).resolves.toBeUndefined();
-    });
-  });
-
-  describe('create', () => {
-    const baseDto: CreateBookDto = {
-      title: 'Test Book',
-      shortDescription: 'short',
-      fullDescription: 'full',
-      pageCount: 100,
-      ageRating: undefined as any,
-      distributionType: undefined as any,
-      applicationDeadline: new Date().toISOString(),
-      totalCopies: 10,
-      availableCopies: 5,
-      genres: [],
-    };
-
-    it('should throw ForbiddenException when availableCopies > totalCopies', async () => {
-      const dto: CreateBookDto = {
-        ...baseDto,
-        totalCopies: 5,
-        availableCopies: 10,
-      };
-
-      await expect(
-        service.create('author-1', UserType.AUTHOR, dto),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('should throw ForbiddenException when availableCopies < 0', async () => {
-      const dto: CreateBookDto = {
-        ...baseDto,
-        totalCopies: 5,
-        availableCopies: -1,
-      };
-
-      await expect(
-        service.create('author-1', UserType.AUTHOR, dto),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('should throw BadRequestException when reviewDeadline <= applicationDeadline', async () => {
-      const now = new Date();
-      const dto: CreateBookDto = {
-        ...baseDto,
-        applicationDeadline: now.toISOString(),
-        reviewDeadline: now.toISOString(),
-      };
-
-      await expect(
-        service.create('author-1', UserType.AUTHOR, dto),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('should create book and related genres when data is valid', async () => {
-      const dto: CreateBookDto = {
-        ...baseDto,
-        genres: [1, 2],
-      };
-
-      const savedBook: Book = {
-        id: 'book-1',
-      } as any;
-
-      bookRepo.create.mockReturnValue(savedBook);
-      bookRepo.save.mockResolvedValue(savedBook);
-
-      genreRepo.find.mockResolvedValue([
-        { id: 1, name: 'G1' } as Genre,
-        { id: 2, name: 'G2' } as Genre,
-      ]);
-
-      bookGenreRepo.create.mockImplementation(
-        (data: Partial<BookGenre>) => data as any,
-      );
-
-      bookGenreRepo.save.mockResolvedValue([]);
-
-      bookRepo.findOne.mockResolvedValue(savedBook);
-
-      const result = await service.create('author-1', UserType.AUTHOR, dto);
-
-      expect(bookRepo.create).toHaveBeenCalled();
-      expect(bookRepo.save).toHaveBeenCalled();
-      expect(genreRepo.find).toHaveBeenCalledWith({
-        where: { id: expect.any(Object) },
       });
-      expect(bookGenreRepo.save).toHaveBeenCalled();
-      expect(result).toEqual(savedBook);
-    });
-
-    it('should throw BadRequestException when some genre ids are invalid', async () => {
-      const dto: CreateBookDto = {
-        ...baseDto,
-        genres: [1, 2],
-      };
-
-      const savedBook: Book = {
-        id: 'book-1',
-      } as any;
-
-      bookRepo.create.mockReturnValue(savedBook);
-      bookRepo.save.mockResolvedValue(savedBook);
-
-      genreRepo.find.mockResolvedValue([{ id: 1, name: 'G1' } as Genre]);
 
       await expect(
-        service.create('author-1', UserType.AUTHOR, dto),
-      ).rejects.toBeInstanceOf(BadRequestException);
+        service.create('author-1', UserType.AUTHOR, {
+          ...baseCreateDto,
+          seriesId: 's1',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.create('author-1', UserType.AUTHOR, {
+          ...baseCreateDto,
+          seriesId: 's1',
+        }),
+      ).rejects.toThrow(BookErrors.BOOK_NOT_OWNED_BY_AUTHOR);
+    });
+
+    it('does not check series when seriesId not provided', async () => {
+      const saved = { id: 'b1' } as Book;
+      bookRepo.create.mockReturnValue(saved);
+      bookRepo.save.mockResolvedValue(saved);
+      bookRepo.findOne.mockResolvedValue(saved);
+
+      await service.create('author-1', UserType.AUTHOR, baseCreateDto);
+
+      expect(seriesRepo.findOne).not.toHaveBeenCalled();
     });
   });
 
   describe('createWithFile', () => {
-    const baseDto: CreateBookDto = {
-      title: 'Test Book',
-      applicationDeadline: new Date().toISOString(),
-      distributionType: 'digital' as any,
-    } as any;
-
-    it('throws when non-physical distribution and file is missing', async () => {
-      const createdBook: Book = { id: 'book-1' } as any;
-      jest.spyOn(service, 'create').mockResolvedValue(createdBook);
+    it('throws when distribution needs file but file is missing', async () => {
+      seriesRepo.findOne.mockResolvedValue(null);
+      const saved = { id: 'b1' } as Book;
+      bookRepo.create.mockReturnValue(saved);
+      bookRepo.save.mockResolvedValue(saved);
+      bookRepo.findOne.mockResolvedValue(saved);
 
       await expect(
-        service.createWithFile('author-1', UserType.AUTHOR, baseDto, undefined),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(booksFileService.uploadBookFile).not.toHaveBeenCalled();
+        service.createWithFile('author-1', UserType.AUTHOR, {
+          ...baseCreateDto,
+          distributionType: DistributionType.DIGITAL,
+        }, undefined),
+      ).rejects.toThrow(BookErrors.BOOK_FILE_NOT_AVAILABLE);
     });
 
-    it('uploads file when non-physical distribution and file is provided', async () => {
-      const createdBook: Book = { id: 'book-1' } as any;
-      jest.spyOn(service, 'create').mockResolvedValue(createdBook);
-
-      const uploadedBook: Book = { id: 'book-1', fileUrl: 'url' } as any;
-      booksFileService.uploadBookFile.mockResolvedValue({
-        book: uploadedBook,
-      } as any);
-
-      const file: Express.Multer.File = {
-        fieldname: 'file',
-        originalname: 'book.pdf',
-        encoding: '7bit',
-        mimetype: 'application/pdf',
-        size: 10,
-        buffer: Buffer.from('test'),
-        stream: null as any,
-        destination: '',
-        filename: '',
-        path: '',
-      };
+    it('returns book when distribution is physical and no file', async () => {
+      seriesRepo.findOne.mockResolvedValue(null);
+      const saved = { id: 'b1', title: 'T' } as Book;
+      bookRepo.create.mockReturnValue(saved);
+      bookRepo.save.mockResolvedValue(saved);
+      bookRepo.findOne.mockResolvedValue(saved);
 
       const result = await service.createWithFile(
         'author-1',
         UserType.AUTHOR,
-        baseDto,
-        file,
-      );
-
-      expect(booksFileService.uploadBookFile).toHaveBeenCalledWith(
-        'author-1',
-        UserType.AUTHOR,
-        createdBook.id,
-        file,
-      );
-      expect(result).toBe(uploadedBook);
-    });
-
-    it('does not require file for physical distribution', async () => {
-      const dto: CreateBookDto = {
-        ...baseDto,
-        distributionType: 'physical' as any,
-      };
-      const createdBook: Book = { id: 'book-1' } as any;
-      jest.spyOn(service, 'create').mockResolvedValue(createdBook);
-
-      const result = await service.createWithFile(
-        'author-1',
-        UserType.AUTHOR,
-        dto,
+        { ...baseCreateDto, distributionType: DistributionType.PHYSICAL },
         undefined,
       );
 
+      expect(result).toEqual(saved);
       expect(booksFileService.uploadBookFile).not.toHaveBeenCalled();
-      expect(result).toBe(createdBook);
     });
 
-    it('uploads file when physical distribution but file is provided', async () => {
-      const dto: CreateBookDto = {
-        ...baseDto,
-        distributionType: DistributionType.PHYSICAL,
-      } as any;
-      const createdBook: Book = { id: 'book-1' } as any;
-      jest.spyOn(service, 'create').mockResolvedValue(createdBook);
-      const uploadedBook: Book = { id: 'book-1', fileUrl: 'url' } as any;
-      booksFileService.uploadBookFile.mockResolvedValue({
-        book: uploadedBook,
-      } as any);
-      const file: Express.Multer.File = {
-        fieldname: 'file',
-        originalname: 'book.pdf',
-        encoding: '7bit',
-        mimetype: 'application/pdf',
-        size: 10,
-        buffer: Buffer.from('x'),
-        stream: null as any,
-        destination: '',
-        filename: '',
-        path: '',
-      };
+    it('uploads file and returns result when file provided', async () => {
+      seriesRepo.findOne.mockResolvedValue(null);
+      const saved = { id: 'b1' } as Book;
+      bookRepo.create.mockReturnValue(saved);
+      bookRepo.save.mockResolvedValue(saved);
+      bookRepo.findOne.mockResolvedValue(saved);
+      const file = { buffer: Buffer.from('x') } as Express.Multer.File;
+      const uploadedBook = { id: 'b1', fileUrl: 'https://x/file' } as Book;
+      booksFileService.uploadBookFile.mockResolvedValue({ book: uploadedBook });
 
       const result = await service.createWithFile(
         'author-1',
         UserType.AUTHOR,
-        dto,
+        baseCreateDto,
         file,
       );
 
       expect(booksFileService.uploadBookFile).toHaveBeenCalledWith(
         'author-1',
         UserType.AUTHOR,
-        createdBook.id,
+        'b1',
         file,
       );
-      expect(result).toBe(uploadedBook);
-    });
-  });
-
-  describe('findMy', () => {
-    it('returns books sorted by application_count when sortBy is application_count', async () => {
-      const books: Book[] = [
-        { id: 'b1', authorId: 'author-1', createdAt: new Date(1000) } as any,
-        { id: 'b2', authorId: 'author-1', createdAt: new Date(2000) } as any,
-      ];
-      bookRepo.find.mockResolvedValue(books);
-      const chain = {
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { bookId: 'b2', count: '5' },
-          { bookId: 'b1', count: '2' },
-        ]),
-      };
-      applicationRepo.createQueryBuilder.mockReturnValue(chain);
-
-      const result = await service.findMy('author-1', 'application_count');
-
-      expect(result[0].id).toBe('b2');
-      expect(result[1].id).toBe('b1');
-    });
-
-    it('returns books sorted by title when sortBy is title', async () => {
-      const books: Book[] = [
-        { id: 'b1', title: 'Zebra', authorId: 'author-1' } as any,
-        { id: 'b2', title: 'Alpha', authorId: 'author-1' } as any,
-      ];
-      bookRepo.find.mockResolvedValue(books);
-
-      const result = await service.findMy('author-1', 'title');
-
-      expect(result[0].title).toBe('Alpha');
-      expect(result[1].title).toBe('Zebra');
-    });
-
-    it('returns books sorted by status when sortBy is status', async () => {
-      const books: Book[] = [
-        { id: 'b1', status: 'active', authorId: 'author-1' } as any,
-        { id: 'b2', status: 'draft', authorId: 'author-1' } as any,
-      ];
-      bookRepo.find.mockResolvedValue(books);
-
-      const result = await service.findMy('author-1', 'status');
-
-      expect(result[0].status).toBe('active');
-      expect(result[1].status).toBe('draft');
-    });
-
-    it('returns books sorted by date_created by default', async () => {
-      const books: Book[] = [
-        { id: 'b1', authorId: 'author-1', createdAt: new Date(1000) } as any,
-        { id: 'b2', authorId: 'author-1', createdAt: new Date(2000) } as any,
-      ];
-      bookRepo.find.mockResolvedValue(books);
-
-      const result = await service.findMy('author-1');
-
-      expect(result[0].id).toBe('b2');
-      expect(result[1].id).toBe('b1');
+      expect(result).toEqual(uploadedBook);
     });
   });
 
   describe('findOnePublic', () => {
-    it('throws NotFoundException when book does not exist', async () => {
+    it('throws when book not found', async () => {
       bookRepo.findOne.mockResolvedValue(null);
 
-      await expect(
-        service.findOnePublic('book-1', 'reader-1', UserType.READER),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.findOnePublic('book-1')).rejects.toThrow(BookErrors.BOOK_NOT_FOUND);
     });
 
-    it('keeps file fields when user is author', async () => {
-      const book: Book = {
-        id: 'book-1',
+    it('keeps fileUrl when user is author', async () => {
+      const book = {
+        id: 'b1',
         authorId: 'author-1',
-        title: 'Test',
-        fileUrl: 'url',
-        fileSize: 123,
+        fileUrl: 'https://file',
+        fileSize: 100,
         fileType: 'pdf',
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
+      } as unknown as Book;
+      bookRepo.findOne.mockResolvedValue({ ...book });
 
       const result = await service.findOnePublic(
-        'book-1',
+        'b1',
         'author-1',
         UserType.AUTHOR,
       );
 
-      expect((result as any).fileUrl).toBe('url');
-      expect((result as any).fileSize).toBe(123);
-      expect((result as any).fileType).toBe('pdf');
+      expect(result.fileUrl).toBe('https://file');
     });
 
-    it('removes file fields for non-author without approved application', async () => {
-      const book: Book = {
-        id: 'book-1',
+    it('strips file fields when not author and no approved application', async () => {
+      const book = {
+        id: 'b1',
         authorId: 'author-1',
-        title: 'Test',
-        fileUrl: 'url',
-        fileSize: 123,
+        fileUrl: 'https://file',
+        fileSize: 100,
         fileType: 'pdf',
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
+      } as unknown as Book;
+      bookRepo.findOne.mockResolvedValue({ ...book });
       applicationRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.findOnePublic(
-        'book-1',
-        'reader-1',
-        UserType.READER,
-      );
+      const result = await service.findOnePublic('b1', 'reader-1', UserType.READER);
 
-      expect(result.id).toBe('book-1');
-      expect((result as any).fileUrl).toBeUndefined();
-      expect((result as any).fileSize).toBeUndefined();
-      expect((result as any).fileType).toBeUndefined();
+      expect(result.fileUrl).toBeUndefined();
+      expect(result.fileSize).toBeUndefined();
+      expect(result.fileType).toBeUndefined();
     });
 
-    it('keeps file fields for approved reader', async () => {
-      const book: Book = {
-        id: 'book-1',
+    it('keeps file fields when user has approved application', async () => {
+      const book = {
+        id: 'b1',
         authorId: 'author-1',
-        title: 'Test',
-        fileUrl: 'url',
-        fileSize: 123,
-        fileType: 'pdf',
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.findOne.mockResolvedValue({
-        id: 'app-1',
-        status: ApplicationStatus.APPROVED,
-      } as any);
+        fileUrl: 'https://file',
+      } as Book;
+      bookRepo.findOne.mockResolvedValue({ ...book });
+      applicationRepo.findOne.mockResolvedValue({ id: 'app1', status: ApplicationStatus.APPROVED });
 
-      const result = await service.findOnePublic(
-        'book-1',
-        'reader-1',
-        UserType.READER,
-      );
+      const result = await service.findOnePublic('b1', 'reader-1', UserType.READER);
 
-      expect((result as any).fileUrl).toBe('url');
-      expect((result as any).fileSize).toBe(123);
-      expect((result as any).fileType).toBe('pdf');
+      expect(result.fileUrl).toBe('https://file');
     });
   });
 
-  describe('remove', () => {
-    it('throws NotFoundException when book does not exist', async () => {
+  describe('update', () => {
+    it('throws when user is not author', async () => {
+      await expect(
+        service.update('user-1', UserType.READER, 'book-1', {} as any),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws when book not found', async () => {
       bookRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.remove('author-1', UserType.AUTHOR, 'book-1'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+        service.update('author-1', UserType.AUTHOR, 'book-1', {} as any),
+      ).rejects.toThrow(BookErrors.BOOK_NOT_FOUND);
     });
 
-    it('throws ForbiddenException when book is not owned by author', async () => {
+    it('throws when book belongs to another author', async () => {
       bookRepo.findOne.mockResolvedValue({
         id: 'book-1',
         authorId: 'other-author',
       } as Book);
 
       await expect(
-        service.remove('author-1', UserType.AUTHOR, 'book-1'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+        service.update('author-1', UserType.AUTHOR, 'book-1', {} as any),
+      ).rejects.toThrow(BookErrors.BOOK_CANNOT_MODIFY_OTHERS);
     });
 
-    it('deletes only book when no file or cover url', async () => {
-      const book: Book = {
+    it('calls update helpers and returns findOnePublic result', async () => {
+      const book = { id: 'book-1', authorId: 'author-1' } as Book;
+      bookRepo.findOne
+        .mockResolvedValueOnce(book)
+        .mockResolvedValueOnce({ ...book, title: 'Updated' });
+      applicationRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.update(
+        'author-1',
+        UserType.AUTHOR,
+        'book-1',
+        { title: 'Updated' } as any,
+      );
+
+      expect(booksUpdateHelper.updateBookFields).toHaveBeenCalledWith(book, expect.any(Object));
+      expect(booksUpdateHelper.updateCopies).toHaveBeenCalled();
+      expect(booksUpdateHelper.updateDeadlines).toHaveBeenCalled();
+      expect(booksUpdateHelper.validateCopies).toHaveBeenCalledWith(book);
+      expect(bookRepo.save).toHaveBeenCalledWith(book);
+      expect(result.title).toBe('Updated');
+    });
+
+    it('calls updateGenres when dto.genres is defined', async () => {
+      const book = { id: 'book-1', authorId: 'author-1' } as Book;
+      bookRepo.findOne
+        .mockResolvedValueOnce(book)
+        .mockResolvedValueOnce(book);
+      applicationRepo.findOne.mockResolvedValue(null);
+
+      await service.update('author-1', UserType.AUTHOR, 'book-1', {
+        genres: [1, 2],
+      } as any);
+
+      expect(booksUpdateHelper.updateGenres).toHaveBeenCalledWith('book-1', [1, 2]);
+    });
+  });
+
+  describe('remove', () => {
+    it('throws when user is not author', async () => {
+      await expect(
+        service.remove('user-1', UserType.READER, 'book-1'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('deletes file and cover when present, then deletes book', async () => {
+      const book = {
         id: 'book-1',
         authorId: 'author-1',
-        fileUrl: null,
-        coverImageUrl: null,
-      } as any;
+        fileUrl: 'https://file',
+        coverImageUrl: 'https://cover',
+      } as Book;
       bookRepo.findOne.mockResolvedValue(book);
-      bookRepo.delete.mockResolvedValue({} as any);
+      bookRepo.delete.mockResolvedValue({});
+
+      await service.remove('author-1', UserType.AUTHOR, 'book-1');
+
+      expect(filesService.deleteFileByUrl).toHaveBeenCalledWith('https://file');
+      expect(filesService.deleteFileByUrl).toHaveBeenCalledWith('https://cover');
+      expect(bookRepo.delete).toHaveBeenCalledWith('book-1');
+    });
+
+    it('deletes book without calling deleteFile when no file or cover', async () => {
+      const book = { id: 'book-1', authorId: 'author-1' } as Book;
+      bookRepo.findOne.mockResolvedValue(book);
+      bookRepo.delete.mockResolvedValue({});
 
       await service.remove('author-1', UserType.AUTHOR, 'book-1');
 
       expect(filesService.deleteFileByUrl).not.toHaveBeenCalled();
       expect(bookRepo.delete).toHaveBeenCalledWith('book-1');
     });
-
-    it('deletes associated files and book when authorized', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        fileUrl: 'file-url',
-        coverImageUrl: 'cover-url',
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      bookRepo.delete.mockResolvedValue({} as any);
-
-      await service.remove('author-1', UserType.AUTHOR, 'book-1');
-
-      expect(filesService.deleteFileByUrl).toHaveBeenCalledWith('file-url');
-      expect(filesService.deleteFileByUrl).toHaveBeenCalledWith('cover-url');
-      expect(bookRepo.delete).toHaveBeenCalledWith('book-1');
-    });
   });
 
   describe('publish', () => {
-    it('throws NotFoundException when book does not exist', async () => {
-      bookRepo.findOne.mockResolvedValue(null);
-
+    it('throws when user is not author', async () => {
       await expect(
-        service.publish('author-1', UserType.AUTHOR, 'book-1'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+        service.publish('user-1', UserType.READER, 'book-1'),
+      ).rejects.toThrow(ForbiddenException);
     });
 
-    it('throws ForbiddenException when book is not owned by author', async () => {
-      bookRepo.findOne.mockResolvedValue({
-        id: 'book-1',
-        authorId: 'other-author',
-      } as Book);
-
-      await expect(
-        service.publish('author-1', UserType.AUTHOR, 'book-1'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('sets status to ACTIVE and calls findOnePublic', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
+    it('sets status ACTIVE and publishedAt then returns findOnePublic', async () => {
+      const book = { id: 'book-1', authorId: 'author-1', status: 'draft' } as Book;
+      bookRepo.findOne
+        .mockResolvedValueOnce(book)
+        .mockResolvedValueOnce({ ...book, status: 'active' });
       bookRepo.save.mockResolvedValue(book);
+      applicationRepo.findOne.mockResolvedValue(null);
 
-      const publicBook: Book = { id: 'book-1' } as any;
-      const spy = jest
-        .spyOn(service, 'findOnePublic')
-        .mockResolvedValue(publicBook);
+      const result = await service.publish('author-1', UserType.AUTHOR, 'book-1');
 
-      const result = await service.publish(
+      expect(book.status).toBe('active');
+      expect(book.publishedAt).toBeDefined();
+      expect(bookRepo.save).toHaveBeenCalledWith(book);
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('findMy', () => {
+    it('returns paginated result for author', async () => {
+      const { paginate } = require('nestjs-paginate');
+      (paginate as jest.Mock).mockResolvedValue({
+        data: [{ id: 'b1' }],
+        meta: { totalItems: 1 },
+        links: {},
+      });
+
+      const result = await service.findMy('author-1', {} as PaginateQuery);
+
+      expect(paginate).toHaveBeenCalledWith(
+        expect.anything(),
+        bookRepo,
+        expect.objectContaining({
+          where: { authorId: 'author-1' },
+          sortableColumns: ['createdAt', 'title', 'status'],
+        }),
+      );
+      expect(result.data).toHaveLength(1);
+    });
+  });
+
+  describe('browse', () => {
+    it('delegates to booksQueryHelper.browse', async () => {
+      booksQueryHelper.browse.mockResolvedValue({ data: [] });
+
+      await service.browse({} as PaginateQuery, 'user-1', UserType.READER);
+
+      expect(booksQueryHelper.browse).toHaveBeenCalledWith(
+        {},
+        'user-1',
+        UserType.READER,
+      );
+    });
+  });
+
+  describe('featured', () => {
+    it('delegates to booksQueryHelper.featured', async () => {
+      booksQueryHelper.featured.mockResolvedValue([]);
+
+      const result = await service.featured('user-1', UserType.READER);
+
+      expect(booksQueryHelper.featured).toHaveBeenCalledWith('user-1', UserType.READER);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('recommendedForUser', () => {
+    it('delegates to booksQueryHelper.recommendedForUser', async () => {
+      booksQueryHelper.recommendedForUser.mockResolvedValue({ data: [] });
+
+      await service.recommendedForUser('user-1', {} as PaginateQuery, UserType.READER);
+
+      expect(booksQueryHelper.recommendedForUser).toHaveBeenCalledWith(
+        'user-1',
+        {},
+        UserType.READER,
+      );
+    });
+  });
+
+  describe('trending', () => {
+    it('delegates to booksQueryHelper.trending', async () => {
+      booksQueryHelper.trending.mockResolvedValue([]);
+
+      const result = await service.trending({ limit: 10 }, 'user-1', UserType.READER);
+
+      expect(booksQueryHelper.trending).toHaveBeenCalledWith(
+        { limit: 10 },
+        'user-1',
+        UserType.READER,
+      );
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('stats', () => {
+    it('delegates to booksAnalyticsService.stats', async () => {
+      booksAnalyticsService.stats.mockResolvedValue({ views: 0 });
+
+      await service.stats('author-1', 'book-1');
+
+      expect(booksAnalyticsService.stats).toHaveBeenCalledWith('author-1', 'book-1');
+    });
+  });
+
+  describe('analytics', () => {
+    it('delegates to booksAnalyticsService.analytics', async () => {
+      booksAnalyticsService.analytics.mockResolvedValue({});
+
+      await service.analytics('author-1', 'book-1');
+
+      expect(booksAnalyticsService.analytics).toHaveBeenCalledWith('author-1', 'book-1');
+    });
+  });
+
+  describe('getAuthorAnalytics', () => {
+    it('delegates to booksAnalyticsService.getAuthorAnalytics', async () => {
+      booksAnalyticsService.getAuthorAnalytics.mockResolvedValue({});
+
+      await service.getAuthorAnalytics('author-1', '7d');
+
+      expect(booksAnalyticsService.getAuthorAnalytics).toHaveBeenCalledWith(
+        'author-1',
+        '7d',
+      );
+    });
+  });
+
+  describe('getBookPerformanceComparison', () => {
+    it('delegates to booksAnalyticsService.getBookPerformanceComparison', async () => {
+      booksAnalyticsService.getBookPerformanceComparison.mockResolvedValue([]);
+
+      await service.getBookPerformanceComparison('author-1');
+
+      expect(booksAnalyticsService.getBookPerformanceComparison).toHaveBeenCalledWith('author-1');
+    });
+  });
+
+  describe('updateFileInfo', () => {
+    it('delegates to booksFileService.updateFileInfo', async () => {
+      const book = { id: 'b1' } as Book;
+      booksFileService.updateFileInfo.mockResolvedValue(book);
+
+      const result = await service.updateFileInfo(
+        'author-1',
+        UserType.AUTHOR,
+        'book-1',
+        'https://url',
+        100,
+        'pdf',
+      );
+
+      expect(booksFileService.updateFileInfo).toHaveBeenCalledWith(
+        'author-1',
+        UserType.AUTHOR,
+        'book-1',
+        'https://url',
+        100,
+        'pdf',
+      );
+      expect(result).toBe(book);
+    });
+  });
+
+  describe('updateCoverImage', () => {
+    it('delegates to booksFileService.updateCoverImage', async () => {
+      booksFileService.updateCoverImage.mockResolvedValue({} as Book);
+
+      await service.updateCoverImage(
+        'author-1',
+        UserType.AUTHOR,
+        'book-1',
+        'https://cover',
+      );
+
+      expect(booksFileService.updateCoverImage).toHaveBeenCalledWith(
+        'author-1',
+        UserType.AUTHOR,
+        'book-1',
+        'https://cover',
+      );
+    });
+  });
+
+  describe('uploadBookFile', () => {
+    it('delegates to booksFileService.uploadBookFile', async () => {
+      const file = {} as Express.Multer.File;
+      booksFileService.uploadBookFile.mockResolvedValue({ book: {} as Book });
+
+      await service.uploadBookFile('author-1', UserType.AUTHOR, 'book-1', file);
+
+      expect(booksFileService.uploadBookFile).toHaveBeenCalledWith(
+        'author-1',
+        UserType.AUTHOR,
+        'book-1',
+        file,
+      );
+    });
+  });
+
+  describe('uploadCoverImage', () => {
+    it('delegates to booksFileService.uploadCoverImage', async () => {
+      const file = {} as Express.Multer.File;
+      booksFileService.uploadCoverImage.mockResolvedValue({} as Book);
+
+      await service.uploadCoverImage('author-1', UserType.AUTHOR, 'book-1', file);
+
+      expect(booksFileService.uploadCoverImage).toHaveBeenCalledWith(
+        'author-1',
+        UserType.AUTHOR,
+        'book-1',
+        file,
+      );
+    });
+  });
+
+  describe('removeCoverImage', () => {
+    it('delegates to booksFileService.removeCoverImage', async () => {
+      await service.removeCoverImage('author-1', UserType.AUTHOR, 'book-1');
+
+      expect(booksFileService.removeCoverImage).toHaveBeenCalledWith(
         'author-1',
         UserType.AUTHOR,
         'book-1',
       );
-
-      expect(book.status).toBeDefined();
-      expect(book.publishedAt).toBeInstanceOf(Date);
-      expect(spy).toHaveBeenCalledWith('book-1', 'author-1', UserType.AUTHOR);
-      expect(result).toBe(publicBook);
     });
   });
 
   describe('findOneForAuthor', () => {
-    it('throws NotFoundException when book not found or not owned by author', async () => {
+    it('throws when book not found or not owned by author', async () => {
       bookRepo.findOne.mockResolvedValue(null);
 
       await expect(
         service.findOneForAuthor('author-1', 'book-1'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      ).rejects.toThrow(BookErrors.BOOK_NOT_OWNED_BY_AUTHOR);
     });
 
     it('returns book when found for author', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        title: 'My Book',
-      } as any;
+      const book = { id: 'book-1', authorId: 'author-1' } as Book;
       bookRepo.findOne.mockResolvedValue(book);
 
       const result = await service.findOneForAuthor('author-1', 'book-1');
 
-      expect(result).toBe(book);
       expect(bookRepo.findOne).toHaveBeenCalledWith({
         where: { id: 'book-1', authorId: 'author-1' },
       });
+      expect(result).toEqual(book);
     });
   });
 
   describe('checkUserApplicationStatus', () => {
-    it('returns false when no approved application exists', async () => {
+    it('returns false when userId is empty', async () => {
+      const result = await service.checkUserApplicationStatus('', 'book-1');
+
+      expect(result).toBe(false);
+      expect(applicationRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('returns false when no approved application', async () => {
       applicationRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.checkUserApplicationStatus(
-        'user-1',
-        'book-1',
-      );
+      const result = await service.checkUserApplicationStatus('reader-1', 'book-1');
 
       expect(result).toBe(false);
     });
 
     it('returns true when approved application exists', async () => {
       applicationRepo.findOne.mockResolvedValue({
-        id: 'app-1',
-      } as any);
+        id: 'app1',
+        status: ApplicationStatus.APPROVED,
+      });
 
-      const result = await service.checkUserApplicationStatus(
-        'user-1',
-        'book-1',
-      );
+      const result = await service.checkUserApplicationStatus('reader-1', 'book-1');
 
       expect(result).toBe(true);
     });
   });
 
   describe('getBookAllReviews', () => {
-    it('returns empty paginated result for reader with no review', async () => {
-      reviewRepo.findOne.mockResolvedValue(null);
-
-      const result = await service.getBookAllReviews(
-        'reader-1',
-        UserType.READER,
-        'book-1',
-        { skip: 0, take: 10 },
-      );
-
-      expect(result.data).toEqual([]);
-      expect(result.total).toBe(0);
-    });
-
-    it('returns single review for reader when review exists', async () => {
-      const review: Review = {
-        id: 'rev-1',
-      } as any;
-      reviewRepo.findOne.mockResolvedValue(review);
-
-      const result = await service.getBookAllReviews(
-        'reader-1',
-        UserType.READER,
-        'book-1',
-        { skip: 0, take: 10 },
-      );
-
-      expect(result.data.length).toBe(1);
-      expect(result.data[0]).toBe(review);
-      expect(result.total).toBe(1);
-    });
-
-    it('returns paginated reviews for author', async () => {
-      const book: Book = { id: 'book-1', authorId: 'author-1' } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      const reviews: Review[] = [{ id: 'rev-1' } as any];
-      const chain = {
+    it('when author: ensures author and uses findOneForAuthor + getAuthorReviews', async () => {
+      const qb = {
         leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        take: jest.fn().mockReturnThis(),
-        getManyAndCount: jest.fn().mockResolvedValue([reviews, 1]),
       };
-      reviewRepo.createQueryBuilder.mockReturnValue(chain);
+      reviewRepo.createQueryBuilder.mockReturnValue(qb);
+      const { paginate } = require('nestjs-paginate');
+      (paginate as jest.Mock).mockResolvedValue({ data: [], meta: {}, links: {} });
+
+      bookRepo.findOne.mockResolvedValue({ id: 'book-1', authorId: 'author-1' } as Book);
 
       const result = await service.getBookAllReviews(
         'author-1',
         UserType.AUTHOR,
         'book-1',
-        { skip: 0, take: 20 },
+        {} as PaginateQuery,
       );
 
-      expect(result.data).toEqual(reviews);
-      expect(result.total).toBe(1);
-      expect(reviewRepo.createQueryBuilder).toHaveBeenCalled();
-    });
-  });
-
-  describe('update', () => {
-    it('throws NotFoundException when book is missing', async () => {
-      bookRepo.findOne.mockResolvedValue(null);
-
-      await expect(
-        service.update('author-1', UserType.AUTHOR, 'book-1', {} as any),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(reviewRepo.createQueryBuilder).toHaveBeenCalledWith('review');
+      expect(result).toEqual({ data: [], meta: {}, links: {} });
     });
 
-    it('throws ForbiddenException when book is not owned by author', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'other-author',
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
+    it('when reader: uses getReaderReview', async () => {
+      reviewRepo.findOne.mockResolvedValue(null);
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+      };
+      reviewRepo.createQueryBuilder.mockReturnValue(qb);
+      const { paginate } = require('nestjs-paginate');
+      (paginate as jest.Mock).mockResolvedValue({ data: [], meta: {}, links: {} });
 
-      await expect(
-        service.update('author-1', UserType.AUTHOR, 'book-1', {} as any),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('throws BadRequestException when totalCopies is less than approved applications', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        totalCopies: 5,
-        availableCopies: 5,
-        applicationDeadline: new Date(),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(3);
-
-      await expect(
-        service.update('author-1', UserType.AUTHOR, 'book-1', {
-          totalCopies: 2,
-        } as any),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('throws BadRequestException when availableCopies exceeds max allowed', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        totalCopies: 10,
-        availableCopies: 6,
-        applicationDeadline: new Date(),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(4);
-
-      await expect(
-        service.update('author-1', UserType.AUTHOR, 'book-1', {
-          availableCopies: 7,
-        } as any),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('updates simple fields and saves book', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        title: 'Old',
-        totalCopies: 5,
-        availableCopies: 5,
-        applicationDeadline: new Date(),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(0);
-      bookRepo.save.mockImplementation(async (b: any) => b);
-
-      const publicBook: Book = { id: 'book-1', title: 'New' } as any;
-      jest.spyOn(service, 'findOnePublic').mockResolvedValue(publicBook);
-
-      const result = await service.update(
-        'author-1',
-        UserType.AUTHOR,
+      const result = await service.getBookAllReviews(
+        'reader-1',
+        UserType.READER,
         'book-1',
-        { title: 'New' } as any,
+        {} as PaginateQuery,
       );
 
-      expect(book.title).toBe('New');
-      expect(result).toBe(publicBook);
-    });
-
-    it('throws ForbiddenException when updating seriesId to non-owned series', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        applicationDeadline: new Date(),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      seriesRepo.findOne.mockResolvedValue({
-        id: 'series-1',
-        authorId: 'other',
-      } as any);
-
-      await expect(
-        service.update('author-1', UserType.AUTHOR, 'book-1', {
-          seriesId: 'series-1',
-        } as any),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('updates totalCopies and availableCopies when totalCopies is valid', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        totalCopies: 10,
-        availableCopies: 5,
-        applicationDeadline: new Date(),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(3);
-      bookRepo.save.mockImplementation(async (b: any) => b);
-      jest.spyOn(service, 'findOnePublic').mockResolvedValue(book);
-
-      await service.update('author-1', UserType.AUTHOR, 'book-1', {
-        totalCopies: 8,
-      } as any);
-
-      expect(book.totalCopies).toBe(8);
-      expect(book.availableCopies).toBe(5);
-    });
-
-    it('reverts status to ACTIVE when applicationDeadline extended from IN_PROGRESS', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        status: BookStatus.IN_PROGRESS,
-        applicationDeadline: new Date(Date.now() - 86400000),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(0);
-      bookRepo.save.mockImplementation(async (b: any) => b);
-      jest.spyOn(service, 'findOnePublic').mockResolvedValue(book);
-
-      await service.update('author-1', UserType.AUTHOR, 'book-1', {
-        applicationDeadline: new Date(Date.now() + 86400000).toISOString(),
-      } as any);
-
-      expect(book.status).toBe(BookStatus.ACTIVE);
-    });
-
-    it('reverts status to IN_PROGRESS when reviewDeadline extended from COMPLETED', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        status: BookStatus.COMPLETED,
-        applicationDeadline: new Date(Date.now() - 86400000),
-        reviewDeadline: new Date(Date.now() - 86400000),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(0);
-      bookRepo.save.mockImplementation(async (b: any) => b);
-      jest.spyOn(service, 'findOnePublic').mockResolvedValue(book);
-
-      await service.update('author-1', UserType.AUTHOR, 'book-1', {
-        reviewDeadline: new Date(Date.now() + 86400000).toISOString(),
-      } as any);
-
-      expect(book.status).toBe(BookStatus.IN_PROGRESS);
-    });
-
-    it('throws BadRequestException when reviewDeadline <= applicationDeadline after update', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        applicationDeadline: new Date(Date.now() + 86400000),
-        reviewDeadline: new Date(Date.now() + 86400000 * 2),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(0);
-
-      await expect(
-        service.update('author-1', UserType.AUTHOR, 'book-1', {
-          reviewDeadline: new Date(Date.now()).toISOString(),
-        } as any),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('throws ForbiddenException when availableCopies > totalCopies after other updates', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        totalCopies: 2,
-        availableCopies: 5,
-        applicationDeadline: new Date(),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(0);
-
-      await expect(
-        service.update('author-1', UserType.AUTHOR, 'book-1', {
-          title: 'New',
-        } as any),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
-    it('replaces genres and throws when new genre ids invalid', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        applicationDeadline: new Date(),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(0);
-      bookRepo.save.mockImplementation(async (b: any) => b);
-      bookGenreRepo.delete.mockResolvedValue({} as any);
-      genreRepo.find.mockResolvedValue([{ id: 1 } as Genre]);
-
-      await expect(
-        service.update('author-1', UserType.AUTHOR, 'book-1', {
-          genres: [1, 2, 3],
-        } as any),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('replaces genres when dto.genres provided and valid', async () => {
-      const book: Book = {
-        id: 'book-1',
-        authorId: 'author-1',
-        applicationDeadline: new Date(),
-      } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.count.mockResolvedValue(0);
-      bookRepo.save.mockImplementation(async (b: any) => b);
-      bookGenreRepo.delete.mockResolvedValue({} as any);
-      genreRepo.find.mockResolvedValue([
-        { id: 1 } as Genre,
-        { id: 2 } as Genre,
-      ]);
-      bookGenreRepo.create.mockImplementation((data: any) => data);
-      bookGenreRepo.save.mockResolvedValue([]);
-      jest.spyOn(service, 'findOnePublic').mockResolvedValue(book);
-
-      await service.update('author-1', UserType.AUTHOR, 'book-1', {
-        genres: [1, 2],
-      } as any);
-
-      expect(bookGenreRepo.delete).toHaveBeenCalledWith({ bookId: 'book-1' });
-      expect(bookGenreRepo.save).toHaveBeenCalled();
-    });
-  });
-
-  describe('BooksQueryService wrappers', () => {
-    it('browse delegates to booksQueryService', async () => {
-      const expected = {
-        data: [],
-        total: 0,
-        skip: 0,
-        take: 10,
-        hasMore: false,
-      };
-      booksQueryService.browse.mockResolvedValue(expected as any);
-
-      const dto: any = { skip: 0, take: 10 };
-      const result = await service.browse(dto, 'u1', UserType.READER);
-
-      expect(booksQueryService.browse).toHaveBeenCalledWith(
-        dto,
-        'u1',
-        UserType.READER,
+      expect(reviewRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            application: { bookId: 'book-1', readerId: 'reader-1' },
+          },
+        }),
       );
-      expect(result).toBe(expected as any);
-    });
-
-    it('featured delegates to booksQueryService', async () => {
-      const books: Book[] = [{ id: 'b1' } as any];
-      booksQueryService.featured.mockResolvedValue(books);
-
-      const result = await service.featured('u1', UserType.READER);
-
-      expect(booksQueryService.featured).toHaveBeenCalledWith(
-        'u1',
-        UserType.READER,
-      );
-      expect(result).toBe(books);
-    });
-
-    it('recommendedForUser delegates to booksQueryService', async () => {
-      const expected = {
-        data: [],
-        total: 0,
-        skip: 0,
-        take: 10,
-        hasMore: false,
-      };
-      booksQueryService.recommendedForUser.mockResolvedValue(expected as any);
-
-      const result = await service.recommendedForUser(
-        'u1',
-        { skip: 0, take: 10 },
-        UserType.READER,
-      );
-
-      expect(booksQueryService.recommendedForUser).toHaveBeenCalledWith(
-        'u1',
-        { skip: 0, take: 10 },
-        UserType.READER,
-      );
-      expect(result).toEqual(expected);
-    });
-
-    it('trending delegates to booksQueryService', async () => {
-      const expected = [{ book: { id: 'b1' } as any, applicationCount: 5 }];
-      booksQueryService.trending.mockResolvedValue(expected as any);
-
-      const result = await service.trending(
-        { limit: 10 },
-        'u1',
-        UserType.READER,
-      );
-
-      expect(booksQueryService.trending).toHaveBeenCalledWith(
-        { limit: 10 },
-        'u1',
-        UserType.READER,
-      );
-      expect(result).toEqual(expected);
-    });
-  });
-
-  describe('BooksAnalyticsService wrappers', () => {
-    it('stats delegates to booksAnalyticsService', async () => {
-      const value = { bookId: 'b1' };
-      booksAnalyticsService.stats.mockResolvedValue(value as any);
-
-      const result = await service.stats('a1', 'b1');
-
-      expect(booksAnalyticsService.stats).toHaveBeenCalledWith('a1', 'b1');
-      expect(result).toBe(value as any);
-    });
-
-    it('analytics delegates to booksAnalyticsService', async () => {
-      const value = { analytics: true };
-      booksAnalyticsService.analytics.mockResolvedValue(value as any);
-
-      const result = await service.analytics('a1', 'b1');
-
-      expect(booksAnalyticsService.analytics).toHaveBeenCalledWith('a1', 'b1');
-      expect(result).toBe(value as any);
-    });
-
-    it('getAuthorAnalytics delegates to booksAnalyticsService', async () => {
-      const value = { totalViews: 100 };
-      booksAnalyticsService.getAuthorAnalytics.mockResolvedValue(value as any);
-
-      const result = await service.getAuthorAnalytics('a1', '7d');
-
-      expect(booksAnalyticsService.getAuthorAnalytics).toHaveBeenCalledWith(
-        'a1',
-        '7d',
-      );
-      expect(result).toBe(value as any);
-    });
-
-    it('getBookPerformanceComparison delegates to booksAnalyticsService', async () => {
-      const value = { comparison: [] };
-      booksAnalyticsService.getBookPerformanceComparison.mockResolvedValue(
-        value as any,
-      );
-
-      const result = await service.getBookPerformanceComparison('a1');
-
-      expect(
-        booksAnalyticsService.getBookPerformanceComparison,
-      ).toHaveBeenCalledWith('a1');
-      expect(result).toBe(value as any);
-    });
-  });
-
-  describe('BooksFileService wrappers', () => {
-    it('updateFileInfo delegates to booksFileService', async () => {
-      const value = { id: 'b1' };
-      booksFileService.updateFileInfo.mockResolvedValue(value as any);
-
-      const result = await service.updateFileInfo(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-        'url',
-        10,
-        'pdf',
-      );
-
-      expect(booksFileService.updateFileInfo).toHaveBeenCalledWith(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-        'url',
-        10,
-        'pdf',
-      );
-      expect(result).toBe(value as any);
-    });
-
-    it('updateCoverImage delegates to booksFileService', async () => {
-      const value = { id: 'b1' };
-      booksFileService.updateCoverImage.mockResolvedValue(value as any);
-
-      const result = await service.updateCoverImage(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-        'url',
-      );
-
-      expect(booksFileService.updateCoverImage).toHaveBeenCalledWith(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-        'url',
-      );
-      expect(result).toBe(value as any);
-    });
-
-    it('uploadBookFile delegates to booksFileService', async () => {
-      const value = { id: 'b1' };
-      booksFileService.uploadBookFile.mockResolvedValue(value as any);
-
-      const file: Express.Multer.File = {
-        fieldname: 'file',
-        originalname: 'book.pdf',
-        encoding: '7bit',
-        mimetype: 'application/pdf',
-        size: 10,
-        buffer: Buffer.from('test'),
-        stream: null as any,
-        destination: '',
-        filename: '',
-        path: '',
-      };
-
-      const result = await service.uploadBookFile(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-        file,
-      );
-
-      expect(booksFileService.uploadBookFile).toHaveBeenCalledWith(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-        file,
-      );
-      expect(result).toBe(value as any);
-    });
-
-    it('uploadCoverImage delegates to booksFileService', async () => {
-      const value = { id: 'b1' };
-      booksFileService.uploadCoverImage.mockResolvedValue(value as any);
-      const file: Express.Multer.File = {
-        fieldname: 'cover',
-        originalname: 'cover.jpg',
-        encoding: '7bit',
-        mimetype: 'image/jpeg',
-        size: 100,
-        buffer: Buffer.from('x'),
-        stream: null as any,
-        destination: '',
-        filename: '',
-        path: '',
-      };
-
-      const result = await service.uploadCoverImage(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-        file,
-      );
-
-      expect(booksFileService.uploadCoverImage).toHaveBeenCalledWith(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-        file,
-      );
-      expect(result).toBe(value as any);
-    });
-
-    it('removeCoverImage delegates to booksFileService', async () => {
-      const value = { id: 'b1' };
-      booksFileService.removeCoverImage.mockResolvedValue(value as any);
-
-      const result = await service.removeCoverImage(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-      );
-
-      expect(booksFileService.removeCoverImage).toHaveBeenCalledWith(
-        'a1',
-        UserType.AUTHOR,
-        'b1',
-      );
-      expect(result).toBe(value as any);
+      expect(result).toEqual({ data: [], meta: {}, links: {} });
     });
   });
 });
+

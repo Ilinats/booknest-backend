@@ -1,21 +1,40 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder, In, MoreThan, LessThanOrEqual } from 'typeorm';
+import { Repository, SelectQueryBuilder, In, MoreThan } from 'typeorm';
 import { PaginateQuery, paginate, FilterOperator } from 'nestjs-paginate';
 import { Book } from '../entity/book.entity';
 import { BookGenre } from '../entity/book-genre.entity';
 import { Application } from '../../applications/entity/application.entity';
 import { Review } from '../../reviews/entity/review.entity';
 import { UserGenrePreference } from '../../user-genre-preferences/entity/user-genre-preference.entity';
-import { BookStatus, ApplicationStatusFilter, DeadlineFilter, BookSortBy } from '../enums';
+import {
+  BookStatus,
+  ApplicationStatusFilter,
+  DeadlineFilter,
+  BookSortBy,
+} from '../enums';
 import { UserType } from '../../users/enums';
 
 @Injectable()
 export class BooksQueryHelper {
   private getPaginateConfig() {
     return {
-      sortableColumns: ['publishedAt', 'createdAt', 'title', 'status', 'author.firstName', 'series.name'] as any[],
-      searchableColumns: ['title', 'shortDescription', 'fullDescription', 'author.firstName', 'author.lastName', 'series.name'] as any[],
+      sortableColumns: [
+        'publishedAt',
+        'createdAt',
+        'title',
+        'status',
+        'author.firstName',
+        'series.name',
+      ] as any[],
+      searchableColumns: [
+        'title',
+        'shortDescription',
+        'fullDescription',
+        'author.firstName',
+        'author.lastName',
+        'series.name',
+      ] as any[],
       filterableColumns: {
         status: [FilterOperator.EQ, FilterOperator.IN],
         ageRating: [FilterOperator.EQ],
@@ -23,7 +42,11 @@ export class BooksQueryHelper {
         authorId: [FilterOperator.EQ],
         seriesId: [FilterOperator.EQ],
         title: [FilterOperator.ILIKE],
-        publishedAt: [FilterOperator.GTE, FilterOperator.LTE, FilterOperator.BTW],
+        publishedAt: [
+          FilterOperator.GTE,
+          FilterOperator.LTE,
+          FilterOperator.BTW,
+        ],
         createdAt: [FilterOperator.GTE, FilterOperator.LTE, FilterOperator.BTW],
         'author.firstName': [FilterOperator.ILIKE],
         'author.lastName': [FilterOperator.ILIKE],
@@ -37,17 +60,23 @@ export class BooksQueryHelper {
     };
   }
 
-  private readonly BOOK_RELATIONS = ['author', 'series', 'bookGenres', 'bookGenres.genre'];
+  private readonly BOOK_RELATIONS = [
+    'author',
+    'series',
+    'bookGenres',
+    'bookGenres.genre',
+  ];
 
   constructor(
     @InjectRepository(Book) private readonly bookRepo: Repository<Book>,
-    @InjectRepository(BookGenre) private readonly bookGenreRepo: Repository<BookGenre>,
-    @InjectRepository(Application) private readonly applicationRepo: Repository<Application>,
+    @InjectRepository(BookGenre)
+    private readonly bookGenreRepo: Repository<BookGenre>,
+    @InjectRepository(Application)
+    private readonly applicationRepo: Repository<Application>,
     @InjectRepository(Review) private readonly reviewRepo: Repository<Review>,
-    @InjectRepository(UserGenrePreference) private readonly userGenrePrefRepo: Repository<UserGenrePreference>,
+    @InjectRepository(UserGenrePreference)
+    private readonly userGenrePrefRepo: Repository<UserGenrePreference>,
   ) {}
-
-  // ========== Public Methods ==========
 
   async browse(query: PaginateQuery, userId?: string, userType?: UserType) {
     if (this.hasComplexFilters(query)) {
@@ -79,7 +108,11 @@ export class BooksQueryHelper {
     return this.sanitizeBooks(books, userId, userType);
   }
 
-  async recommendedForUser(userId: string, query: PaginateQuery, userType?: UserType) {
+  async recommendedForUser(
+    userId: string,
+    query: PaginateQuery,
+    userType?: UserType,
+  ) {
     if (!userId) {
       return this.fallbackToFeatured(query, userId, userType);
     }
@@ -124,7 +157,11 @@ export class BooksQueryHelper {
     };
   }
 
-  async trending(opts?: { limit?: number }, userId?: string, userType?: UserType) {
+  async trending(
+    opts?: { limit?: number },
+    userId?: string,
+    userType?: UserType,
+  ) {
     const limit = opts?.limit ?? 10;
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -146,11 +183,12 @@ export class BooksQueryHelper {
     const results = await qb.getRawAndEntities();
     return results.entities.map((book, index) => ({
       book: this.sanitizeBook(book, userId, userType),
-      applicationCount: parseInt(results.raw[index]?.applicationCount || '0', 10),
+      applicationCount: parseInt(
+        results.raw[index]?.applicationCount || '0',
+        10,
+      ),
     }));
   }
-
-  // ========== Private Helper Methods ==========
 
   private createQueryBuilder(): SelectQueryBuilder<Book> {
     return this.bookRepo
@@ -162,7 +200,14 @@ export class BooksQueryHelper {
   }
 
   private hasComplexFilters(query: PaginateQuery): boolean {
-    const { genres, minAvgRating, maxAvgRating, sortBy, applicationStatus, deadlineFilter } = this.extractQueryParams(query);
+    const {
+      genres,
+      minAvgRating,
+      maxAvgRating,
+      sortBy,
+      applicationStatus,
+      deadlineFilter,
+    } = this.extractQueryParams(query);
 
     return (
       (genres?.length ?? 0) > 0 ||
@@ -177,7 +222,11 @@ export class BooksQueryHelper {
   private buildSimpleWhere(query: PaginateQuery) {
     const { applicationStatus } = this.extractQueryParams(query);
     const where: any = {
-      status: In([BookStatus.ACTIVE, BookStatus.IN_PROGRESS, BookStatus.COMPLETED]),
+      status: In([
+        BookStatus.ACTIVE,
+        BookStatus.IN_PROGRESS,
+        BookStatus.COMPLETED,
+      ]),
     };
 
     if (applicationStatus === ApplicationStatusFilter.ACCEPTING_APPLICATIONS) {
@@ -188,7 +237,11 @@ export class BooksQueryHelper {
     return where;
   }
 
-  private async browseWithComplexFilters(query: PaginateQuery, userId?: string, userType?: UserType) {
+  private async browseWithComplexFilters(
+    query: PaginateQuery,
+    userId?: string,
+    userType?: UserType,
+  ) {
     const qb = this.createQueryBuilder();
     const { sortBy } = this.extractQueryParams(query);
 
@@ -210,19 +263,34 @@ export class BooksQueryHelper {
       minAvgRating: query['minAvgRating'] as number | undefined,
       maxAvgRating: query['maxAvgRating'] as number | undefined,
       sortBy: query['sortBy'] as BookSortBy | undefined,
-      applicationStatus: query['applicationStatus'] as ApplicationStatusFilter | undefined,
+      applicationStatus: query['applicationStatus'] as
+        | ApplicationStatusFilter
+        | undefined,
       deadlineFilter: query['deadlineFilter'] as DeadlineFilter | undefined,
     };
   }
 
   private addStatusFilter(qb: SelectQueryBuilder<Book>) {
     qb.andWhere('book.status IN (:...statuses)', {
-      statuses: [BookStatus.ACTIVE, BookStatus.IN_PROGRESS, BookStatus.COMPLETED],
+      statuses: [
+        BookStatus.ACTIVE,
+        BookStatus.IN_PROGRESS,
+        BookStatus.COMPLETED,
+      ],
     });
   }
 
-  private addAdvancedFilters(qb: SelectQueryBuilder<Book>, query: PaginateQuery) {
-    const { genres, minAvgRating, maxAvgRating, applicationStatus, deadlineFilter } = this.extractQueryParams(query);
+  private addAdvancedFilters(
+    qb: SelectQueryBuilder<Book>,
+    query: PaginateQuery,
+  ) {
+    const {
+      genres,
+      minAvgRating,
+      maxAvgRating,
+      applicationStatus,
+      deadlineFilter,
+    } = this.extractQueryParams(query);
 
     if (applicationStatus === ApplicationStatusFilter.ACCEPTING_APPLICATIONS) {
       qb.andWhere('book.availableCopies > 0');
@@ -234,10 +302,14 @@ export class BooksQueryHelper {
       sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
 
       if (deadlineFilter === DeadlineFilter.ENDING_SOON) {
-        qb.andWhere('book.applicationDeadline <= :sevenDaysFromNow', { sevenDaysFromNow });
+        qb.andWhere('book.applicationDeadline <= :sevenDaysFromNow', {
+          sevenDaysFromNow,
+        });
         qb.andWhere('book.applicationDeadline > :now', { now: new Date() });
       } else if (deadlineFilter === DeadlineFilter.STILL_TIME) {
-        qb.andWhere('book.applicationDeadline > :sevenDaysFromNow', { sevenDaysFromNow });
+        qb.andWhere('book.applicationDeadline > :sevenDaysFromNow', {
+          sevenDaysFromNow,
+        });
       }
     }
 
@@ -258,13 +330,19 @@ export class BooksQueryHelper {
         .from('book_genres', 'bg')
         .where('bg.genre_id IN (:...genreIds)', { genreIds: genres })
         .groupBy('bg.book_id')
-        .having('COUNT(DISTINCT bg.genre_id) = :genreCount', { genreCount: genres.length })
+        .having('COUNT(DISTINCT bg.genre_id) = :genreCount', {
+          genreCount: genres.length,
+        })
         .getQuery();
       return `book.id IN ${subQuery}`;
     });
   }
 
-  private addRatingFilter(qb: SelectQueryBuilder<Book>, minAvgRating?: number, maxAvgRating?: number) {
+  private addRatingFilter(
+    qb: SelectQueryBuilder<Book>,
+    minAvgRating?: number,
+    maxAvgRating?: number,
+  ) {
     qb.leftJoin(
       (subQb) => {
         return subQb
@@ -280,10 +358,14 @@ export class BooksQueryHelper {
     );
 
     if (minAvgRating !== undefined) {
-      qb.andHaving('AVG(review_avg.avg_rating) >= :minAvgRating', { minAvgRating });
+      qb.andHaving('AVG(review_avg.avg_rating) >= :minAvgRating', {
+        minAvgRating,
+      });
     }
     if (maxAvgRating !== undefined) {
-      qb.andHaving('AVG(review_avg.avg_rating) <= :maxAvgRating', { maxAvgRating });
+      qb.andHaving('AVG(review_avg.avg_rating) <= :maxAvgRating', {
+        maxAvgRating,
+      });
     }
   }
 
@@ -334,20 +416,30 @@ export class BooksQueryHelper {
     }
   }
 
-  private sanitizeBooks(books: Book[], userId?: string, userType?: UserType): Book[] {
+  private sanitizeBooks(
+    books: Book[],
+    userId?: string,
+    userType?: UserType,
+  ): Book[] {
     return books.map((book) => this.sanitizeBook(book, userId, userType));
   }
 
   private sanitizeBook(book: Book, userId?: string, userType?: UserType): Book {
-    const isAuthor = userId && userType === UserType.AUTHOR && book.authorId === userId;
+    const isAuthor =
+      userId && userType === UserType.AUTHOR && book.authorId === userId;
     if (!isAuthor) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { fileUrl, fileSize, fileType, ...bookWithoutFiles } = book;
       return bookWithoutFiles as Book;
     }
     return book;
   }
 
-  private async fallbackToFeatured(query: PaginateQuery, userId?: string, userType?: UserType) {
+  private async fallbackToFeatured(
+    query: PaginateQuery,
+    userId?: string,
+    userType?: UserType,
+  ) {
     const featured = await this.featured(userId, userType);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;

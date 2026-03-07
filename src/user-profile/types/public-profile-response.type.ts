@@ -6,4 +6,3 @@ export type PublicProfileResponse = {
   profile: PublicProfileData;
   isFriend?: boolean;
 };
-

@@ -201,7 +201,11 @@ export class BooksController {
     @Paginate() query: PaginateQuery,
     @CurrentUser() user: JwtPayload | undefined,
   ) {
-    return this.booksService.browse(query, user?.sub, user?.userType as UserType);
+    return this.booksService.browse(
+      query,
+      user?.sub,
+      user?.userType as UserType,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -219,10 +223,7 @@ export class BooksController {
     description: 'Forbidden - Author access required',
   })
   @ApiQuery({ type: () => FindMyBooksDto })
-  my(
-    @CurrentUser('sub') authorId: string,
-    @Paginate() query: PaginateQuery,
-  ) {
+  my(@CurrentUser('sub') authorId: string, @Paginate() query: PaginateQuery) {
     return this.booksService.findMy(authorId, query);
   }
 

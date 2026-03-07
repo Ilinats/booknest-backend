@@ -45,10 +45,6 @@ import { FilesModule } from '../files/files.module';
     BooksSchedulerService,
   ],
   controllers: [BooksController],
-  exports: [
-    BooksService,
-    BooksAnalyticsService,
-    BooksFileService,
-  ],
+  exports: [BooksService, BooksAnalyticsService, BooksFileService],
 })
 export class BooksModule {}

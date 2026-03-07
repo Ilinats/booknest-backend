@@ -2,7 +2,7 @@ import { Repository, In } from 'typeorm';
 import { Application } from '../entity/application.entity';
 import { UserAddress } from '../../user-address/entity/user-address.entity';
 import { Book } from '../../books/entity';
-import { DistributionType } from 'src/books/enums';
+import { DistributionType } from '../../books/enums';
 
 export class ApplicationAddressHelper {
   static async attachReaderAddresses(

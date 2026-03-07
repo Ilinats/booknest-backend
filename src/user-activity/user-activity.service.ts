@@ -323,9 +323,9 @@ export class UserActivityService {
     });
   }
 
-  private sanitizeBookFiles<T extends { fileUrl?: unknown; fileSize?: unknown; fileType?: unknown }>(
-    book: T,
-  ): Omit<T, 'fileUrl' | 'fileSize' | 'fileType'> {
+  private sanitizeBookFiles<
+    T extends { fileUrl?: unknown; fileSize?: unknown; fileType?: unknown },
+  >(book: T): Omit<T, 'fileUrl' | 'fileSize' | 'fileType'> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { fileUrl, fileSize, fileType, ...safeBook } = book;
     return safeBook;
@@ -339,7 +339,8 @@ export class UserActivityService {
     const isAuthorViewer = viewerType === UserType.AUTHOR;
 
     if (activity.book) {
-      const isAuthorOfBook = isAuthorViewer && activity.book.authorId === viewerId;
+      const isAuthorOfBook =
+        isAuthorViewer && activity.book.authorId === viewerId;
       if (!isAuthorOfBook) {
         activity.book = this.sanitizeBookFiles(activity.book) as any;
       }

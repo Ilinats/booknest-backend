@@ -32,7 +32,6 @@ import {
   LogoutResponseDto,
   VerificationStatusResponseDto,
 } from './dto';
-import { Response } from 'express';
 
 @ApiTags('Auth')
 @Controller('auth')

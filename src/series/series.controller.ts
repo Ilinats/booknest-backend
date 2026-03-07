@@ -88,12 +88,7 @@ export class SeriesController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateSeriesDto,
   ) {
-    return this.seriesService.update(
-      user.sub,
-      user.userType,
-      id,
-      dto,
-    );
+    return this.seriesService.update(user.sub, user.userType, id, dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

@@ -27,11 +27,7 @@ import {
   JwtPayload,
 } from '../auth/decorators/current-user.decorator';
 import { UserType } from '../users/enums';
-import {
-  FriendRequestType,
-  FriendStatus,
-  FriendsListSortBy,
-} from './enums';
+import { FriendRequestType, FriendStatus, FriendsListSortBy } from './enums';
 
 @ApiTags('Friends')
 @Controller('friends')

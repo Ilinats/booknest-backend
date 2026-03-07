@@ -74,7 +74,7 @@ describe('UserGenrePreferencesService', () => {
     it('should throw NotFoundException when genre does not exist', async () => {
       genreRepository.findOne.mockResolvedValue(null);
 
-      await expect(service.upsert(user, 10)).rejects.toBeInstanceOf(
+      await expect(service.upsert(user.id, 10)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -92,9 +92,12 @@ describe('UserGenrePreferencesService', () => {
       prefRepository.create.mockReturnValue(pref);
       prefRepository.save.mockResolvedValue(pref);
 
-      const result = await service.upsert(user, 10);
+      const result = await service.upsert(user.id, 10);
 
-      expect(prefRepository.create).toHaveBeenCalledWith({ user, genre });
+      expect(prefRepository.create).toHaveBeenCalledWith({
+        user: expect.objectContaining({ id: user.id }),
+        genre,
+      });
       expect(prefRepository.save).toHaveBeenCalledWith(pref);
       expect(result).toEqual(pref);
     });
@@ -112,7 +115,7 @@ describe('UserGenrePreferencesService', () => {
       prefRepository.findOne.mockResolvedValue(existing);
       prefRepository.save.mockImplementation(async (p) => p);
 
-      const result = await service.upsert(user, 10);
+      const result = await service.upsert(user.id, 10);
 
       expect(result.genre.id).toBe(10);
       expect(prefRepository.create).not.toHaveBeenCalled();

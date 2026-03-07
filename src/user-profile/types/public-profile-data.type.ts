@@ -9,4 +9,3 @@ export type PublicProfileData = {
   readingListPrivacy?: PrivacyLevel;
   reviewsPrivacy?: PrivacyLevel;
 };
-

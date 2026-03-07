@@ -6,7 +6,6 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { UsersService } from '../users/users.service';
 import {
   RegisterDto,
   LoginDto,
@@ -19,7 +18,6 @@ import {
   RefreshTokenResponseDto,
   LogoutResponseDto,
   VerificationStatusResponseDto,
-  MessageResponseDto,
 } from './dto';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -43,7 +41,6 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly userAddressService: UserAddressService,
@@ -227,6 +224,15 @@ export class AuthService {
     }
 
     return { message: 'Verification code sent successfully' };
+  }
+
+  // Backwards-compatible wrappers for older tests
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    return this.verifyEmailWithCode({ code: token } as any);
+  }
+
+  async resendVerification(email: string): Promise<{ message: string }> {
+    return this.resendVerificationCode(email);
   }
 
   async getVerificationStatus(

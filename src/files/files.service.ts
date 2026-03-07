@@ -11,7 +11,7 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { FileErrorCode } from './errors';
 
 @Injectable()
@@ -115,7 +115,7 @@ export class FilesService {
 
     const fileExtension =
       file.originalname.split('.').pop()?.toLowerCase() || 'unknown';
-    const uniqueFilename = `${uuidv4()}.${fileExtension}`;
+    const uniqueFilename = `${randomUUID()}.${fileExtension}`;
     const fileKey = `${folder}/${uniqueFilename}`;
 
     try {
@@ -168,7 +168,7 @@ export class FilesService {
 
   extractFileKeyFromUrl(fileUrl: string): string | null {
     if (!fileUrl) return null;
-    
+
     if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
       return fileUrl;
     }
@@ -279,7 +279,7 @@ export class FilesService {
 
     const fileExtension =
       file.originalname.split('.').pop()?.toLowerCase() || 'unknown';
-    const uniqueFilename = `${uuidv4()}.${fileExtension}`;
+    const uniqueFilename = `${randomUUID()}.${fileExtension}`;
     const fileKey = `${folder}/${uniqueFilename}`;
 
     try {

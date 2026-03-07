@@ -60,15 +60,16 @@ export class OwnershipGuard implements CanActivate {
     let isOwner = false;
 
     switch (ownership.resource) {
-      case 'book':
+      case 'book': {
         const book = await this.bookRepo.findOne({ where: { id: resourceId } });
         if (!book) {
           throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
         }
         isOwner = book.authorId === userId;
         break;
+      }
 
-      case 'application':
+      case 'application': {
         const application = await this.applicationRepo.findOne({
           where: { id: resourceId },
           relations: ['book', 'reader'],
@@ -80,8 +81,9 @@ export class OwnershipGuard implements CanActivate {
           application.readerId === userId ||
           application.book.authorId === userId;
         break;
+      }
 
-      case 'review':
+      case 'review': {
         const review = await this.reviewRepo.findOne({
           where: { id: resourceId },
           relations: ['application', 'application.reader', 'application.book'],
@@ -93,8 +95,9 @@ export class OwnershipGuard implements CanActivate {
           review.application.readerId === userId ||
           review.application.book.authorId === userId;
         break;
+      }
 
-      case 'series':
+      case 'series': {
         const series = await this.seriesRepo.findOne({
           where: { id: resourceId },
         });
@@ -105,6 +108,7 @@ export class OwnershipGuard implements CanActivate {
         }
         isOwner = series.authorId === userId;
         break;
+      }
 
       case 'user':
         isOwner = resourceId === userId;

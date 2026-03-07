@@ -132,7 +132,7 @@ export class SeedingService {
 
   private async seedUsers() {
     this.logger.log('👥 Seeding users...');
-    const passwordHash = await argon2.hash('password123'); 
+    const passwordHash = await argon2.hash('password123');
 
     const authorsData = [
       {
@@ -354,11 +354,10 @@ export class SeedingService {
   private async seedBooks(authors: User[], series: Series[]) {
     this.logger.log('📚 Seeding books...');
     const now = new Date();
-    const futureDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); 
-    const pastDate = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000); 
+    const futureDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const pastDate = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
 
     const booksData = [
-      
       {
         authorId: authors[0].id,
         title: 'The Enchanted Forest',
@@ -417,7 +416,7 @@ export class SeedingService {
         status: BookStatus.ACTIVE,
         pageCount: 280,
       },
-      
+
       {
         authorId: authors[1].id,
         title: 'Neural Networks',
@@ -474,7 +473,7 @@ export class SeedingService {
         status: BookStatus.IN_PROGRESS,
         pageCount: 320,
       },
-      
+
       {
         authorId: authors[2].id,
         title: 'Victorian Hearts',
@@ -575,10 +574,8 @@ export class SeedingService {
     this.logger.log('📝 Seeding applications...');
     const applications: Application[] = [];
 
-    
     const book0 = books.find((b) => b.title === 'The Enchanted Forest');
     if (book0) {
-      
       const app1 = await this.createApplication(book0.id, readers[0].id, {
         status: ApplicationStatus.PENDING,
         message:
@@ -587,7 +584,6 @@ export class SeedingService {
       });
       if (app1) applications.push(app1);
 
-      
       const app2 = await this.createApplication(book0.id, readers[1].id, {
         status: ApplicationStatus.APPROVED,
         message: 'This sounds like an amazing story!',
@@ -599,7 +595,6 @@ export class SeedingService {
       });
       if (app2) applications.push(app2);
 
-      
       const app3 = await this.createApplication(book0.id, readers[2].id, {
         status: ApplicationStatus.APPROVED,
         message: "I'm very interested in this book.",
@@ -612,7 +607,6 @@ export class SeedingService {
       });
       if (app3) applications.push(app3);
 
-      
       const app4 = await this.createApplication(book0.id, readers[3].id, {
         status: ApplicationStatus.REJECTED,
         message: 'I would love to read this!',
@@ -623,10 +617,8 @@ export class SeedingService {
       if (app4) applications.push(app4);
     }
 
-    
     const book1 = books.find((b) => b.title === "Dragon's Legacy");
     if (book1) {
-      
       const app5 = await this.createApplication(book1.id, readers[0].id, {
         status: ApplicationStatus.APPROVED,
         message: "I'm a huge fan of fantasy series!",
@@ -640,7 +632,6 @@ export class SeedingService {
       });
       if (app5) applications.push(app5);
 
-      
       const app6 = await this.createApplication(book1.id, readers[1].id, {
         status: ApplicationStatus.WITHDRAWN,
         message: 'I applied but changed my mind.',
@@ -649,7 +640,6 @@ export class SeedingService {
       if (app6) applications.push(app6);
     }
 
-    
     const book2 = books.find((b) => b.title === 'Mystic Realms');
     if (book2) {
       const app7 = await this.createApplication(book2.id, readers[2].id, {
@@ -671,7 +661,6 @@ export class SeedingService {
       if (app8) applications.push(app8);
     }
 
-    
     const book3 = books.find((b) => b.title === 'Neural Networks');
     if (book3) {
       const app9 = await this.createApplication(book3.id, readers[1].id, {
@@ -687,7 +676,6 @@ export class SeedingService {
       if (app9) applications.push(app9);
     }
 
-    
     const book4 = books.find((b) => b.title === 'Victorian Hearts');
     if (book4) {
       const app10 = await this.createApplication(book4.id, readers[3].id, {
@@ -796,9 +784,7 @@ export class SeedingService {
   private async seedFriends(readers: User[]) {
     this.logger.log('👫 Seeding friends...');
 
-    
     const friendData = [
-      
       {
         requester: readers[0],
         addressee: readers[1],
@@ -815,7 +801,6 @@ export class SeedingService {
         status: FriendStatus.ACCEPTED,
       },
 
-      
       {
         requester: readers[2],
         addressee: readers[3],

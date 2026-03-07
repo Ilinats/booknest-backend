@@ -2,7 +2,6 @@ import {
   Controller,
   Post,
   Get,
-  Delete,
   Param,
   UseInterceptors,
   UploadedFile,
@@ -33,10 +32,7 @@ export class FilesController {
   @ApiResponse({ status: 200, description: 'File uploaded successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UseInterceptors(FileInterceptor('file'))
-  async uploadFile(
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user: User,
-  ) {
+  async uploadFile(@UploadedFile() file: Express.Multer.File) {
     const result = await this.filesService.uploadFile(file, 'books');
 
     return {
@@ -55,10 +51,7 @@ export class FilesController {
     description: 'Download URL generated successfully',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getDownloadUrl(
-    @Param('fileKey') fileKey: string,
-    @CurrentUser() user: User,
-  ) {
+  async getDownloadUrl(@Param('fileKey') fileKey: string) {
     const downloadUrl = await this.filesService.getFileDownloadUrl(fileKey);
 
     return {
@@ -74,10 +67,7 @@ export class FilesController {
     description: 'File metadata retrieved successfully',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getFileMetadata(
-    @Param('fileKey') fileKey: string,
-    @CurrentUser() user: User,
-  ) {
+  async getFileMetadata(@Param('fileKey') fileKey: string) {
     const metadata = await this.filesService.getFileMetadata(fileKey);
 
     return metadata;

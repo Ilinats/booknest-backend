@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, ILike, MoreThanOrEqual } from 'typeorm';
+import { Repository, FindOptionsWhere, MoreThanOrEqual } from 'typeorm';
 import { User } from './entity/user.entity';
 import { CreateUserDto, UpdateUserDto, UpdateProfileDto } from './dto';
 import { Book } from '../books/entity';

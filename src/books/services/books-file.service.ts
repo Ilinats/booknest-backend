@@ -2,7 +2,6 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
-  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -14,8 +13,6 @@ import { ensureAuthor } from '../../common/utils/auth.util';
 
 @Injectable()
 export class BooksFileService {
-  private readonly logger = new Logger(BooksFileService.name);
-
   constructor(
     @InjectRepository(Book) private readonly bookRepo: Repository<Book>,
     private readonly filesService: FilesService,
@@ -117,7 +114,10 @@ export class BooksFileService {
       await this.filesService.deleteFileByUrl(book.coverImageUrl);
     }
 
-    const uploadResult = await this.filesService.uploadImage(file, 'book_covers');
+    const uploadResult = await this.filesService.uploadImage(
+      file,
+      'book_covers',
+    );
     const updatedBook = await this.updateCoverImage(
       authorId,
       authorUserType,
@@ -154,7 +154,10 @@ export class BooksFileService {
     return this.findBookWithRelations(bookId);
   }
 
-  private async findBookForAuthor(authorId: string, bookId: string): Promise<Book> {
+  private async findBookForAuthor(
+    authorId: string,
+    bookId: string,
+  ): Promise<Book> {
     const book = await this.bookRepo.findOne({
       where: { id: bookId, authorId },
     });

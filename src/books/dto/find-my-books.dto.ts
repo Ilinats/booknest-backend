@@ -12,4 +12,3 @@ export class FindMyBooksDto {
   @IsEnum(AuthorBookSortBy)
   sortBy?: AuthorBookSortBy;
 }
-

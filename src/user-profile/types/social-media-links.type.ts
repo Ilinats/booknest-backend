@@ -5,4 +5,3 @@ export type SocialMediaLinks = {
   goodreads?: string;
   custom?: Array<{ platform: string; url: string }>;
 };
-

@@ -89,7 +89,10 @@ export class BooksService {
     }
   }
 
-  private validateDeadlines(applicationDeadline: string, reviewDeadline?: string) {
+  private validateDeadlines(
+    applicationDeadline: string,
+    reviewDeadline?: string,
+  ) {
     if (reviewDeadline) {
       const appDeadline = new Date(applicationDeadline);
       const revDeadline = new Date(reviewDeadline);
@@ -164,8 +167,12 @@ export class BooksService {
       throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
     }
 
-    const isAuthor = userId && userType === UserType.AUTHOR && book.authorId === userId;
-    const hasApprovedApplication = await this.checkUserApplicationStatus(userId || '', bookId);
+    const isAuthor =
+      userId && userType === UserType.AUTHOR && book.authorId === userId;
+    const hasApprovedApplication = await this.checkUserApplicationStatus(
+      userId || '',
+      bookId,
+    );
 
     if (!isAuthor && !hasApprovedApplication) {
       delete book.fileUrl;
@@ -264,7 +271,11 @@ export class BooksService {
     return this.booksQueryHelper.featured(userId, userType);
   }
 
-  async recommendedForUser(userId: string, query: PaginateQuery, userType?: UserType) {
+  async recommendedForUser(
+    userId: string,
+    query: PaginateQuery,
+    userType?: UserType,
+  ) {
     return this.booksQueryHelper.recommendedForUser(userId, query, userType);
   }
 
@@ -376,9 +387,12 @@ export class BooksService {
     return book;
   }
 
-  async checkUserApplicationStatus(userId: string, bookId: string): Promise<boolean> {
+  async checkUserApplicationStatus(
+    userId: string,
+    bookId: string,
+  ): Promise<boolean> {
     if (!userId) return false;
-    
+
     const application = await this.applicationRepo.findOne({
       where: {
         readerId: userId,
@@ -421,7 +435,11 @@ export class BooksService {
     });
   }
 
-  private async getReaderReview(userId: string, bookId: string, query: PaginateQuery) {
+  private async getReaderReview(
+    userId: string,
+    bookId: string,
+    query: PaginateQuery,
+  ) {
     const review = await this.reviewRepo.findOne({
       where: {
         application: {
@@ -437,7 +455,9 @@ export class BooksService {
       .leftJoinAndSelect('review.application', 'application')
       .leftJoinAndSelect('application.reader', 'reader')
       .leftJoinAndSelect('application.book', 'book')
-      .where(review ? 'review.id = :reviewId' : '1 = 0', { reviewId: review?.id });
+      .where(review ? 'review.id = :reviewId' : '1 = 0', {
+        reviewId: review?.id,
+      });
 
     return paginate(query, qb, {
       sortableColumns: ['createdAt'],

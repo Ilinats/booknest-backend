@@ -12,4 +12,3 @@ export class GetAuthorAnalyticsDto {
   @IsEnum(DateRange)
   dateRange?: DateRange;
 }
-

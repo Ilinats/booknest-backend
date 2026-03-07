@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { ReportReason } from '../enums/report-reasons.enum';
 
 export class CreateUserReportDto {
@@ -28,5 +34,3 @@ export class CreateUserReportDto {
   @MaxLength(1000)
   message?: string;
 }
-
-

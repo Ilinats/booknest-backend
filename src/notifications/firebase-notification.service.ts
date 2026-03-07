@@ -235,10 +235,7 @@ export class FirebaseNotificationService {
       return true;
     } catch (error: unknown) {
       const { message, stack } = this.extractFirebaseError(error);
-      this.logger.error(
-        `Error sending topic notification: ${message}`,
-        stack,
-      );
+      this.logger.error(`Error sending topic notification: ${message}`, stack);
       return false;
     }
   }
@@ -261,11 +258,8 @@ export class FirebaseNotificationService {
             ? typedError.message
             : String(error),
         stack:
-          typeof typedError.stack === 'string'
-            ? typedError.stack
-            : undefined,
-        code:
-          typeof typedError.code === 'string' ? typedError.code : undefined,
+          typeof typedError.stack === 'string' ? typedError.stack : undefined,
+        code: typeof typedError.code === 'string' ? typedError.code : undefined,
       };
     }
 

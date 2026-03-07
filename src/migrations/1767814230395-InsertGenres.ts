@@ -1,9 +1,8 @@
-import { MigrationInterface, QueryRunner } from "typeorm";
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class InsertGenres1767814230395 implements MigrationInterface {
-
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
             INSERT INTO genres (name) VALUES
             ('Art'),
             ('Biography'),
@@ -52,10 +51,10 @@ export class InsertGenres1767814230395 implements MigrationInterface {
             ('Young Adult')
             ON CONFLICT (name) DO NOTHING;
         `);
-    }
+  }
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
             DELETE FROM genres WHERE name IN (
                 'Art',
                 'Biography',
@@ -104,6 +103,5 @@ export class InsertGenres1767814230395 implements MigrationInterface {
                 'Young Adult'
             );
         `);
-    }
-
+  }
 }

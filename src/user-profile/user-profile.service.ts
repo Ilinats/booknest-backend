@@ -223,9 +223,10 @@ export class UserProfileService {
 
     let stats: Record<string, unknown> | null = null;
     try {
-      stats = (await this.usersService.getUserStats(
-        user.id,
-      )) as Record<string, unknown>;
+      stats = (await this.usersService.getUserStats(user.id)) as Record<
+        string,
+        unknown
+      >;
     } catch {
       // Swallow stats errors; profile itself should still be returned
     }

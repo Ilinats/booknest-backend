@@ -372,9 +372,6 @@ export class NotificationService {
         ? String((error as { stack?: unknown }).stack)
         : undefined;
 
-    this.logger.error(
-      `Failed to send push notification: ${message}`,
-      stack,
-    );
+    this.logger.error(`Failed to send push notification: ${message}`, stack);
   }
 }

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SeedingService } from './seeding.service';
@@ -29,6 +30,14 @@ describe('SeedingService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SeedingService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) =>
+              key === 'SEED_USERS_PASSWORD' ? 'test-seed-password' : undefined,
+            ),
+          },
+        },
         { provide: getRepositoryToken(Genre), useValue: createMockRepo() },
         { provide: getRepositoryToken(User), useValue: createMockRepo() },
         { provide: getRepositoryToken(Book), useValue: createMockRepo() },

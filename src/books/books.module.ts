@@ -13,6 +13,8 @@ import { BooksService } from './books.service';
 import { BooksController } from './books.controller';
 import { BooksAnalyticsService } from './services/books-analytics.service';
 import { BooksFileService } from './services/books-file.service';
+import { BookPdfFingerprintService } from './services/book-pdf-fingerprint.service';
+import { BookEpubFingerprintService } from './services/book-epub-fingerprint.service';
 import { BooksSchedulerService } from './services/books-scheduler.service';
 import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
 import { SeriesModule } from '../series/series.module';
@@ -42,6 +44,8 @@ import { FilesModule } from '../files/files.module';
     BooksUpdateHelper,
     BooksAnalyticsService,
     BooksFileService,
+    BookPdfFingerprintService,
+    BookEpubFingerprintService,
     BooksSchedulerService,
   ],
   controllers: [BooksController],

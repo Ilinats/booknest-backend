@@ -39,17 +39,23 @@ export class ErrorResponseFilter implements ExceptionFilter {
     } else {
       if (exception instanceof Error) {
         this.logger.error(
-          'Unhandled error:',
-          exception.message,
-          exception.stack,
+          `Unhandled error: ${exception.name}: ${exception.message}\n${exception.stack ?? ''}`,
         );
       } else {
-        this.logger.error('Unhandled error (non-Error):', exception);
+        this.logger.error(`Unhandled error (non-Error): ${String(exception)}`);
       }
     }
 
+    const summary =
+      Array.isArray(message) ? message.join(', ') : String(message);
+    const extra =
+      status === HttpStatus.INTERNAL_SERVER_ERROR &&
+      exception instanceof Error &&
+      !Array.isArray(message)
+        ? ` | ${exception.name}: ${exception.message}`
+        : '';
     this.logger.error(
-      `${request.method} ${request.url} - ${status} - ${Array.isArray(message) ? message.join(', ') : message}`,
+      `${request.method} ${request.url} - ${status} - ${summary}${extra}`,
       exception instanceof Error ? exception.stack : undefined,
     );
 

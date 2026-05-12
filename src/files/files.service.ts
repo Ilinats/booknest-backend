@@ -12,6 +12,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
+import { Readable } from 'stream';
 import { FileErrorCode } from './errors';
 
 @Injectable()
@@ -146,6 +147,33 @@ export class FilesService {
         `Failed to upload file to S3: ${errorMessage}`,
       );
     }
+  }
+
+  async getObjectBuffer(fileKey: string): Promise<Buffer> {
+    try {
+      const result = await this.s3Client.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileKey,
+        }),
+      );
+      if (!result.Body) {
+        throw new NotFoundException(FileErrorCode.FILE_NOT_FOUND);
+      }
+      return await this.readStreamToBuffer(result.Body as Readable);
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      console.error('S3 get object error:', error);
+      throw new NotFoundException(FileErrorCode.FILE_ACCESS_DENIED);
+    }
+  }
+
+  private async readStreamToBuffer(stream: Readable): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   }
 
   async getFileDownloadUrl(

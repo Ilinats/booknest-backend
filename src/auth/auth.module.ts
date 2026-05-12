@@ -15,6 +15,7 @@ import { Application } from '../applications/entity/application.entity';
 import { Review } from '../reviews/entity/review.entity';
 import { FilesModule } from '../files/files.module';
 import { MailModule } from '../mail/mail.module';
+import { ApprovedBookApplicationGuard } from './guards/approved-book-application.guard';
 
 @Module({
   imports: [
@@ -33,16 +34,23 @@ import { MailModule } from '../mail/mail.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService): JwtModuleOptions => ({
-        secret: config.get<string>('JWT_SECRET') ?? 'dev_secret_change_me',
+        secret:
+          config.get<string>('JWT_SECRET')?.trim() || 'dev_secret_change_me',
         signOptions: {
-          expiresIn: config.get<string>('JWT_EXPIRES_IN') ?? '15m',
+          expiresIn:
+            config.get<string>('JWT_EXPIRES_IN')?.trim() || '15m',
         },
       }),
       inject: [ConfigService],
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, UsersService, VerificationCodeService],
-  exports: [JwtModule],
+  providers: [
+    AuthService,
+    UsersService,
+    VerificationCodeService,
+    ApprovedBookApplicationGuard,
+  ],
+  exports: [JwtModule, ApprovedBookApplicationGuard],
 })
 export class AuthModule {}

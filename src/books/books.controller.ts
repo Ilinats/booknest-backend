@@ -8,13 +8,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
   UsePipes,
   ValidationPipe,
   UseInterceptors,
   UploadedFile,
-  BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -24,12 +23,19 @@ import {
   ApiQuery,
   ApiConsumes,
   ApiBody,
+  ApiProduces,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { BooksService } from './books.service';
 import { FilesService } from '../files/files.service';
-import { JwtAuthGuard, RolesGuard, OptionalJwtAuthGuard } from '../auth/guards';
+import {
+  JwtAuthGuard,
+  RolesGuard,
+  OptionalJwtAuthGuard,
+  ApprovedBookApplicationGuard,
+} from '../auth/guards';
 import { Roles } from '../auth/decorators';
 import {
   CurrentUser,
@@ -47,7 +53,6 @@ import {
 import { Book } from './entity/book.entity';
 import { BasePaginationDto } from '../common';
 import { Paginate, PaginateQuery } from 'nestjs-paginate';
-import { BookErrors } from './errors/book-errors';
 
 @ApiTags('Books')
 @Controller('books')
@@ -86,15 +91,9 @@ export class BooksController {
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async create(
     @CurrentUser() user: JwtPayload,
-    @UploadedFile() file: Express.Multer.File | undefined,
     @Body() dto: CreateBookDto,
   ) {
-    return this.booksService.createWithFile(
-      user.sub,
-      user.userType as UserType,
-      dto,
-      file,
-    );
+    return this.booksService.create(user.sub, user.userType as UserType, dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -102,6 +101,20 @@ export class BooksController {
   @Post(':bookId/upload')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Upload book file (Author only)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Book file (PDF, EPUB, etc.)',
+        },
+      },
+      required: ['file'],
+    },
+  })
   @ApiResponse({ status: 200, description: 'File uploaded successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
@@ -134,6 +147,20 @@ export class BooksController {
   @Post(':bookId/cover')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Upload book cover image (Author only)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        cover: {
+          type: 'string',
+          format: 'binary',
+          description: 'Cover image (JPEG, PNG, WebP, etc.)',
+        },
+      },
+      required: ['cover'],
+    },
+  })
   @ApiResponse({
     status: 200,
     description: 'Cover image uploaded successfully',
@@ -331,15 +358,18 @@ export class BooksController {
     return this.booksService.getBookPerformanceComparison(authorId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, ApprovedBookApplicationGuard)
   @Get(':bookId/download')
   @ApiBearerAuth()
+  @ApiProduces('application/pdf', 'application/epub+zip', 'application/json')
   @ApiOperation({
-    summary: 'Get download URL for a book (Requires approved application)',
+    summary:
+      'Download book file (approved application required). PDF and EPUB are streamed with a per-reader fingerprint; other formats return JSON with a presigned URL.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Download URL generated successfully',
+    description:
+      'PDF: `application/pdf` body. EPUB: `application/epub+zip` body. Other formats: JSON with `downloadUrl`, etc.',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
@@ -349,34 +379,66 @@ export class BooksController {
   async download(
     @CurrentUser() user: JwtPayload,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
+    @Res({ passthrough: false }) res: Response,
   ) {
-    const hasApprovedApplication =
-      await this.booksService.checkUserApplicationStatus(user.sub, bookId);
-    if (!hasApprovedApplication) {
-      throw new ForbiddenException(BookErrors.BOOK_NO_COPIES_AVAILABLE);
-    }
-
-    const book = await this.booksService.findOnePublic(
-      bookId,
+    await this.booksService.sendBookDownloadToResponse(
+      res,
       user.sub,
       user.userType as UserType,
+      bookId,
     );
+  }
 
-    if (!book.fileUrl) {
-      throw new BadRequestException(BookErrors.BOOK_FILE_NOT_AVAILABLE);
-    }
-
-    const fileKey = book.fileUrl.split('/').slice(-2).join('/');
-
-    const downloadUrl = await this.filesService.getFileDownloadUrl(fileKey);
-
-    return {
-      downloadUrl,
-      expiresIn: 3600,
-      fileName: book.title,
-      fileSize: book.fileSize,
-      fileType: book.fileType,
-    };
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.AUTHOR)
+  @Post(':bookId/leak-fingerprint')
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ApiOperation({
+    summary:
+      'Decode per-reader fingerprint from a PDF or EPUB (author, book owner only)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Fingerprint found',
+    schema: {
+      type: 'object',
+      properties: {
+        readerId: { type: 'string', format: 'uuid' },
+        bookId: { type: 'string', format: 'uuid' },
+        issuedAt: { type: 'number', description: 'Unix seconds when marked' },
+        format: { type: 'string', enum: ['pdf', 'epub'] },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Wrong book or invalid file' })
+  @ApiResponse({
+    status: 404,
+    description: 'No verifiable fingerprint in uploaded PDF or EPUB',
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 100 * 1024 * 1024 },
+    }),
+  )
+  async decodeLeakFingerprint(
+    @CurrentUser('sub') authorId: string,
+    @Param('bookId', new ParseUUIDPipe()) bookId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.booksService.decodeLeakFingerprintFromUpload(
+      authorId,
+      bookId,
+      file,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

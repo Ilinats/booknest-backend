@@ -34,7 +34,9 @@ import { AuthErrors } from './errors/auth-errors';
 import { UserType } from '../users/enums';
 import { VerificationTypeEnum } from './enums';
 import { ConflictException } from '@nestjs/common';
-import ms from 'ms';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ms = require('ms') as (value: string) => number;
 
 @Injectable()
 export class AuthService {
@@ -88,7 +90,9 @@ export class AuthService {
   }
 
   async refresh(dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
-    const refreshSecret = this.getRefreshSecret();
+    const refreshSecret =
+      this.configService.get<string>('JWT_REFRESH_SECRET') ||
+      `${this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me'}_refresh`;
     let payload: {
       sub: string;
       username?: string;
@@ -294,12 +298,17 @@ export class AuthService {
     };
 
     const refreshExpiresIn =
-      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN')?.trim() ||
+      '7d';
+
+    const refreshSecret =
+      this.configService.get<string>('JWT_REFRESH_SECRET') ||
+      `${this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me'}_refresh`;
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload),
       this.jwtService.signAsync(payload, {
-        secret: this.getRefreshSecret(),
+        secret: refreshSecret,
         expiresIn: refreshExpiresIn,
       }),
     ]);
@@ -315,7 +324,17 @@ export class AuthService {
     expiresIn: string,
   ): Promise<void> {
     const tokenHash = this.hashToken(refreshToken);
-    const expiresAt = new Date(Date.now() + ms(expiresIn as ms.StringValue));
+    const spec = expiresIn.trim();
+    let expiresMs: number;
+    try {
+      expiresMs = ms(spec);
+    } catch {
+      expiresMs = ms('7d');
+    }
+    if (typeof expiresMs !== 'number' || !Number.isFinite(expiresMs) || expiresMs <= 0) {
+      expiresMs = ms('7d');
+    }
+    const expiresAt = new Date(Date.now() + expiresMs);
 
     await this.refreshTokenRepository.save({
       userId,
@@ -326,14 +345,6 @@ export class AuthService {
 
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
-  }
-
-  private getRefreshSecret(): string {
-    return (
-      this.configService.get<string>('JWT_REFRESH_SECRET') ??
-      (this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me') +
-        '_refresh'
-    );
   }
 
   private async verifyPassword(
@@ -352,8 +363,15 @@ export class AuthService {
       return null;
     }
 
-    const ok = await argon2.verify(user.passwordHash, password);
-    return ok ? user : null;
+    try {
+      const ok = await argon2.verify(user.passwordHash, password);
+      return ok ? user : null;
+    } catch (err) {
+      this.logger.warn(
+        `argon2.verify failed for user id=${user.id}: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
   }
 
   private async findExistingUser(

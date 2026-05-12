@@ -6,13 +6,13 @@ jest.mock('argon2', () => ({
   argon2id: 2,
 }));
 
-jest.mock('ms', () => ({
-  __esModule: true,
-  default: (val: string): number => {
+jest.mock('ms', () => {
+  const impl = (val: string): number => {
     if (val === '7d') return 7 * 24 * 60 * 60 * 1000;
     return 86400000;
-  },
-}));
+  };
+  return impl;
+});
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { JwtService } from '@nestjs/jwt';

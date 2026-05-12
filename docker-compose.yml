@@ -47,6 +47,7 @@ services:
       APP_URL: ${APP_URL:-http://localhost:3000}
       FIREBASE_SERVICE_ACCOUNT_PATH: ${FIREBASE_SERVICE_ACCOUNT_PATH}
       RUN_SEEDING: ${RUN_SEEDING:-false}
+      SEED_USERS_PASSWORD: ${SEED_USERS_PASSWORD}
     depends_on:
       - postgres
 

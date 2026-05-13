@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Book } from './entity/book.entity';
@@ -21,6 +22,8 @@ import { BooksAnalyticsService } from './services/books-analytics.service';
 import { BooksFileService } from './services/books-file.service';
 import { ApplicationStatus } from '../applications/enums';
 import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
+import { BookPdfFingerprintService } from './services/book-pdf-fingerprint.service';
+import { BookEpubFingerprintService } from './services/book-epub-fingerprint.service';
 
 @Injectable()
 export class BooksService {
@@ -35,6 +38,8 @@ export class BooksService {
     private readonly booksFileService: BooksFileService,
     private readonly booksQueryHelper: BooksQueryHelper,
     private readonly booksUpdateHelper: BooksUpdateHelper,
+    private readonly bookPdfFingerprintService: BookPdfFingerprintService,
+    private readonly bookEpubFingerprintService: BookEpubFingerprintService,
   ) {}
 
   async create(
@@ -387,6 +392,51 @@ export class BooksService {
     return book;
   }
 
+  async decodeLeakFingerprintFromUpload(
+    authorId: string,
+    bookId: string,
+    file: Express.Multer.File | undefined,
+  ): Promise<{
+    readerId: string;
+    bookId: string;
+    issuedAt: number;
+    format: 'pdf' | 'epub';
+  }> {
+    if (!file?.buffer) {
+      throw new BadRequestException(BookErrors.BOOK_FILE_NOT_AVAILABLE);
+    }
+    await this.findOneForAuthor(authorId, bookId);
+    const fromPdf = await this.bookPdfFingerprintService.extractFingerprint(
+      file.buffer,
+    );
+    if (fromPdf) {
+      if (fromPdf.bookId !== bookId) {
+        throw new BadRequestException(BookErrors.BOOK_FINGERPRINT_WRONG_BOOK);
+      }
+      return {
+        readerId: fromPdf.readerId,
+        bookId: fromPdf.bookId,
+        issuedAt: fromPdf.iat,
+        format: 'pdf' as const,
+      };
+    }
+    const fromEpub = await this.bookEpubFingerprintService.extractFingerprint(
+      file.buffer,
+    );
+    if (fromEpub) {
+      if (fromEpub.bookId !== bookId) {
+        throw new BadRequestException(BookErrors.BOOK_FINGERPRINT_WRONG_BOOK);
+      }
+      return {
+        readerId: fromEpub.readerId,
+        bookId: fromEpub.bookId,
+        issuedAt: fromEpub.iat,
+        format: 'epub' as const,
+      };
+    }
+    throw new NotFoundException(BookErrors.BOOK_FINGERPRINT_NOT_FOUND);
+  }
+
   async checkUserApplicationStatus(
     userId: string,
     bookId: string,
@@ -402,6 +452,97 @@ export class BooksService {
     });
 
     return !!application;
+  }
+
+  async sendBookDownloadToResponse(
+    res: Response,
+    userId: string,
+    userType: UserType | undefined,
+    bookId: string,
+  ): Promise<void> {
+    const book = await this.findOnePublic(bookId, userId, userType);
+
+    if (!book.fileUrl) {
+      throw new BadRequestException(BookErrors.BOOK_FILE_NOT_AVAILABLE);
+    }
+
+    const fileKey =
+      this.filesService.extractFileKeyFromUrl(book.fileUrl) ||
+      book.fileUrl.split('/').slice(-2).join('/');
+
+    if (
+      this.bookPdfFingerprintService.isPdfBook(
+        book.fileType ?? undefined,
+        fileKey,
+      )
+    ) {
+      try {
+        const raw = await this.filesService.getObjectBuffer(fileKey);
+        const marked = await this.bookPdfFingerprintService.embedFingerprint(
+          raw,
+          {
+            bookId,
+            readerId: userId,
+          },
+        );
+        const baseName = this.sanitizeBookDownloadBasename(book.title);
+        const filename = `${baseName || 'book'}.pdf`;
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${filename.replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        );
+        res.setHeader('Content-Length', String(marked.length));
+        res.send(marked);
+        return;
+      } catch {
+        throw new BadRequestException(BookErrors.BOOK_PDF_WATERMARK_FAILED);
+      }
+    }
+
+    if (
+      this.bookEpubFingerprintService.isEpubBook(
+        book.fileType ?? undefined,
+        fileKey,
+      )
+    ) {
+      try {
+        const raw = await this.filesService.getObjectBuffer(fileKey);
+        const marked = await this.bookEpubFingerprintService.embedFingerprint(
+          raw,
+          {
+            bookId,
+            readerId: userId,
+          },
+        );
+        const baseName = this.sanitizeBookDownloadBasename(book.title);
+        const filename = `${baseName || 'book'}.epub`;
+        res.setHeader('Content-Type', 'application/epub+zip');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${filename.replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        );
+        res.setHeader('Content-Length', String(marked.length));
+        res.send(marked);
+        return;
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        throw new BadRequestException(BookErrors.BOOK_EPUB_FINGERPRINT_FAILED);
+      }
+    }
+
+    const downloadUrl = await this.filesService.getFileDownloadUrl(fileKey);
+    res.json({
+      downloadUrl,
+      expiresIn: 3600,
+      fileName: book.title,
+      fileSize: book.fileSize,
+      fileType: book.fileType,
+    });
+  }
+
+  private sanitizeBookDownloadBasename(title: string): string {
+    return title.replace(/[^\w\s.-]/g, '_').trim().slice(0, 180);
   }
 
   async getBookAllReviews(

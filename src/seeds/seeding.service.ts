@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as argon2 from 'argon2';
@@ -26,6 +27,7 @@ export class SeedingService {
   private readonly logger = new Logger(SeedingService.name);
 
   constructor(
+    private readonly configService: ConfigService,
     @InjectRepository(Genre)
     private readonly genreRepository: Repository<Genre>,
     @InjectRepository(User)
@@ -130,9 +132,20 @@ export class SeedingService {
     }
   }
 
+  private getSeedUsersPassword(): string {
+    const value = this.configService.get<string>('SEED_USERS_PASSWORD');
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      throw new Error(
+        'SEED_USERS_PASSWORD must be set in the environment to seed users',
+      );
+    }
+    return trimmed;
+  }
+
   private async seedUsers() {
     this.logger.log('👥 Seeding users...');
-    const passwordHash = await argon2.hash('password123');
+    const passwordHash = await argon2.hash(this.getSeedUsersPassword());
 
     const authorsData = [
       {

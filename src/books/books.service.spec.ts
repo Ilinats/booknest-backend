@@ -9,6 +9,8 @@ import { Review } from '../reviews/entity/review.entity';
 import { FilesService } from '../files/files.service';
 import { BooksAnalyticsService } from './services/books-analytics.service';
 import { BooksFileService } from './services/books-file.service';
+import { BookPdfFingerprintService } from './services/book-pdf-fingerprint.service';
+import { BookEpubFingerprintService } from './services/book-epub-fingerprint.service';
 import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
 import { User } from '../users/entity/user.entity';
 import { UserAddress } from '../user-address/entity/user-address.entity';
@@ -135,6 +137,20 @@ describe('BooksService', () => {
             updateDeadlines: jest.fn().mockResolvedValue(undefined),
             validateCopies: jest.fn(),
             updateGenres: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: BookPdfFingerprintService,
+          useValue: {
+            isPdfBook: jest.fn(),
+            embedFingerprint: jest.fn(),
+          },
+        },
+        {
+          provide: BookEpubFingerprintService,
+          useValue: {
+            isEpubBook: jest.fn(),
+            embedFingerprint: jest.fn(),
           },
         },
       ],

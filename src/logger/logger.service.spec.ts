@@ -41,7 +41,12 @@ describe('CustomLogger', () => {
 
   it('should call winston error on error', () => {
     logger.error('err', 'trace');
-    expect(winstonLogger.error).toHaveBeenCalledWith('err', { trace: 'trace' });
+    expect(winstonLogger.error).toHaveBeenCalledWith('err\ntrace');
+  });
+
+  it('should call winston error with message only when trace omitted', () => {
+    logger.error('err');
+    expect(winstonLogger.error).toHaveBeenCalledWith('err');
   });
 
   it('should call winston warn on warn', () => {

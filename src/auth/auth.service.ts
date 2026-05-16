@@ -28,6 +28,7 @@ import * as argon2 from 'argon2';
 import { RefreshToken } from './entity/refresh-token.entity';
 import { UserAddressService } from '../user-address/user-address.service';
 import { VerificationCodeService } from './services/verification-code.service';
+import { jwtExpiresIn } from './jwt-expires-in.util';
 import { sanitizeUser } from '../common/utils/user-sanitizer.util';
 import { UserResponseDto } from '../users/dto';
 import { AuthErrors } from './errors/auth-errors';
@@ -297,9 +298,10 @@ export class AuthService {
       userType: user.userType,
     };
 
-    const refreshExpiresIn =
-      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN')?.trim() ||
-      '7d';
+    const refreshExpiresIn = jwtExpiresIn(
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN'),
+      '7d',
+    );
 
     const refreshSecret =
       this.configService.get<string>('JWT_REFRESH_SECRET') ||

@@ -16,6 +16,7 @@ import { Review } from '../reviews/entity/review.entity';
 import { FilesModule } from '../files/files.module';
 import { MailModule } from '../mail/mail.module';
 import { ApprovedBookApplicationGuard } from './guards/approved-book-application.guard';
+import { jwtExpiresIn } from './jwt-expires-in.util';
 
 @Module({
   imports: [
@@ -37,8 +38,10 @@ import { ApprovedBookApplicationGuard } from './guards/approved-book-application
         secret:
           config.get<string>('JWT_SECRET')?.trim() || 'dev_secret_change_me',
         signOptions: {
-          expiresIn:
-            config.get<string>('JWT_EXPIRES_IN')?.trim() || '15m',
+          expiresIn: jwtExpiresIn(
+            config.get<string>('JWT_EXPIRES_IN'),
+            '15m',
+          ),
         },
       }),
       inject: [ConfigService],

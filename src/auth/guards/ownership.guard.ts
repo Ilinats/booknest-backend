@@ -7,21 +7,17 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtPayload } from '../decorators/current-user.decorator';
-import { AuthErrorCode, AuthErrors } from '../../common/errors/auth-errors';
+import { AuthErrors } from '../errors/auth-errors';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Book } from '../../books/entity/book.entity';
-import { BookErrors, BookErrorCode } from 'src/books/errors';
-import {
-  ApplicationErrors,
-  ApplicationErrorCode,
-} from 'src/applications/errors';
-import { ReviewErrorCode } from 'src/reviews/errors';
-import { SeriesErrors, SeriesErrorCode } from 'src/series/errors';
+import { BookErrors } from '../../books/errors';
+import { ApplicationErrors } from '../../applications/errors';
+import { ReviewErrorCode } from '../../reviews/errors';
+import { SeriesErrors, SeriesErrorCode } from '../../series/errors';
 import { Application } from '../../applications/entity/application.entity';
 import { Review } from '../../reviews/entity/review.entity';
 import { Series } from '../../series/entity/series.entity';
-import { User } from '../../users/entity/user.entity';
 import { OWNERSHIP_KEY } from '../decorators/ownership.decorator';
 
 @Injectable()
@@ -33,7 +29,6 @@ export class OwnershipGuard implements CanActivate {
     private readonly applicationRepo: Repository<Application>,
     @InjectRepository(Review) private readonly reviewRepo: Repository<Review>,
     @InjectRepository(Series) private readonly seriesRepo: Repository<Series>,
-    @InjectRepository(User) private readonly userRepo: Repository<User>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -50,11 +45,7 @@ export class OwnershipGuard implements CanActivate {
     const user = request.user as JwtPayload | undefined;
 
     if (!user) {
-      const error = AuthErrors[AuthErrorCode.UNAUTHORIZED_ERROR];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+      throw new ForbiddenException(AuthErrors.ROLE_ACCESS_REQUIRED);
     }
 
     const resourceId = request.params[ownership.paramName];
@@ -69,37 +60,30 @@ export class OwnershipGuard implements CanActivate {
     let isOwner = false;
 
     switch (ownership.resource) {
-      case 'book':
+      case 'book': {
         const book = await this.bookRepo.findOne({ where: { id: resourceId } });
         if (!book) {
-          const error = BookErrors[BookErrorCode.BOOK_NOT_FOUND];
-          throw new NotFoundException({
-            message: error.message,
-            code: error.code,
-          });
+          throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
         }
         isOwner = book.authorId === userId;
         break;
+      }
 
-      case 'application':
+      case 'application': {
         const application = await this.applicationRepo.findOne({
           where: { id: resourceId },
           relations: ['book', 'reader'],
         });
         if (!application) {
-          const error =
-            ApplicationErrors[ApplicationErrorCode.APPLICATION_NOT_FOUND];
-          throw new NotFoundException({
-            message: error.message,
-            code: error.code,
-          });
+          throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
         }
         isOwner =
           application.readerId === userId ||
           application.book.authorId === userId;
         break;
+      }
 
-      case 'review':
+      case 'review': {
         const review = await this.reviewRepo.findOne({
           where: { id: resourceId },
           relations: ['application', 'application.reader', 'application.book'],
@@ -111,40 +95,31 @@ export class OwnershipGuard implements CanActivate {
           review.application.readerId === userId ||
           review.application.book.authorId === userId;
         break;
+      }
 
-      case 'series':
+      case 'series': {
         const series = await this.seriesRepo.findOne({
           where: { id: resourceId },
         });
         if (!series) {
-          const error = SeriesErrors[SeriesErrorCode.SERIES_NOT_FOUND];
-          throw new NotFoundException({
-            message: error.message,
-            code: error.code,
-          });
+          throw new NotFoundException(
+            SeriesErrors[SeriesErrorCode.SERIES_NOT_FOUND],
+          );
         }
         isOwner = series.authorId === userId;
         break;
+      }
 
       case 'user':
         isOwner = resourceId === userId;
         break;
 
       default:
-        const error =
-          AuthErrors[AuthErrorCode.INVALID_OWNERSHIP_RESOURCE_TYPE];
-        throw new ForbiddenException({
-          message: error.message,
-          code: error.code,
-        });
+        throw new ForbiddenException(AuthErrors.ROLE_ACCESS_REQUIRED);
     }
 
     if (!isOwner) {
-      const error = AuthErrors[AuthErrorCode.ROLE_ACCESS_REQUIRED_ERROR];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+      throw new ForbiddenException(AuthErrors.ROLE_ACCESS_REQUIRED);
     }
 
     return true;

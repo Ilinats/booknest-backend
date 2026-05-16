@@ -17,4 +17,3 @@ export const UserAddressErrors: Record<UserAddressErrorCode, AppError> = {
     statusCode: 404,
   },
 };
-

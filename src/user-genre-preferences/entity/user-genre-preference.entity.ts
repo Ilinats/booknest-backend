@@ -1,6 +1,4 @@
 import {
-  Check,
-  Column,
   CreateDateColumn,
   Entity,
   JoinColumn,

@@ -7,7 +7,6 @@ import {
   ParseUUIDPipe,
   Post,
   Patch,
-  Query,
   UseGuards,
   UsePipes,
   ValidationPipe,
@@ -17,8 +16,8 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
 } from '@nestjs/swagger';
+import { Paginate, PaginateQuery } from 'nestjs-paginate';
 import { ApplicationsService } from './applications.service';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
@@ -32,8 +31,6 @@ import {
   BulkActionDto,
   BulkMarkSentDto,
   UpdateApplicationCompleteDto,
-  FindApplicationsDto,
-  FindBookApplicationsDto,
   UpdateReadingStatusDto,
 } from './dto';
 import { Application } from './entity';
@@ -172,15 +169,13 @@ export class ApplicationsController {
     summary:
       "Get current user's applications with advanced filters (Authenticated)",
   })
-  @ApiQuery({ type: () => FindApplicationsDto })
   @ApiResponse({ status: 200, description: 'Paginated list of applications' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   findMy(
     @CurrentUser('sub') readerId: string,
-    @Query() dto: FindApplicationsDto,
+    @Paginate() query: PaginateQuery,
   ) {
-    return this.applicationsService.findMyApplications(readerId, dto);
+    return this.applicationsService.findMyApplications(readerId, query);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -222,7 +217,6 @@ export class ApplicationsController {
   @Get('books/:bookId')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all applications for a book (Author only)' })
-  @ApiQuery({ type: () => FindBookApplicationsDto })
   @ApiResponse({
     status: 200,
     description: 'Paginated list of applications for the book',
@@ -232,17 +226,15 @@ export class ApplicationsController {
     status: 403,
     description: 'Forbidden - Author access required',
   })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   getBookApplications(
     @CurrentUser() user: JwtPayload,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
-    @Query() dto: FindBookApplicationsDto,
+    @Paginate() query: PaginateQuery,
   ) {
     return this.applicationsService.getBookApplications(
       bookId,
       user.sub,
-      user.userType,
-      dto,
+      query,
     );
   }
   @UseGuards(JwtAuthGuard)
@@ -263,11 +255,7 @@ export class ApplicationsController {
     @CurrentUser() user: JwtPayload,
     @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
   ) {
-    return this.applicationsService.findOne(
-      applicationId,
-      user.sub,
-      user.userType,
-    );
+    return this.applicationsService.findOne(applicationId, user.sub);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -383,10 +371,7 @@ export class ApplicationsController {
     @CurrentUser('sub') readerId: string,
     @Param('applicationId', new ParseUUIDPipe()) applicationId: string,
   ) {
-    return this.applicationsService.markCopyReceived(
-      applicationId,
-      readerId,
-    );
+    return this.applicationsService.markCopyReceived(applicationId, readerId);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -1,12 +1,12 @@
 import {
-  Injectable,
-  NotFoundException,
+  BadRequestException,
   ConflictException,
   ForbiddenException,
-  BadRequestException,
+  Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, ILike, MoreThanOrEqual } from 'typeorm';
+import { Repository, FindOptionsWhere, MoreThanOrEqual } from 'typeorm';
 import { User } from './entity/user.entity';
 import { CreateUserDto, UpdateUserDto, UpdateProfileDto } from './dto';
 import { Book } from '../books/entity';
@@ -20,12 +20,8 @@ import {
   UserPublicResponseDto,
   UserProfileResponseDto,
 } from './dto';
-import {
-  sanitizeUser,
-  sanitizeUserPublic,
-  createPaginatedResponse,
-} from '../common';
-import { UserErrorCode, UserErrors } from './errors/user-errors';
+import { sanitizeUser, sanitizeUserPublic } from '../common';
+import { UserErrors } from './errors/user-errors';
 import { ApplicationStatus } from '../applications/enums';
 import { ReadingStatus } from '../applications/enums';
 import { UserType } from './enums';
@@ -49,8 +45,7 @@ export class UsersService {
       where: [{ username: createDto.username }, { email: createDto.email }],
     });
     if (existing) {
-      const error = UserErrors[UserErrorCode.USER_ALREADY_EXISTS];
-      throw new ConflictException({ message: error.message, code: error.code });
+      throw new ConflictException(UserErrors.USER_ALREADY_EXISTS);
     }
 
     const user = this.usersRepository.create({
@@ -72,8 +67,7 @@ export class UsersService {
   async findOneById(id: string): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id } });
     if (!user) {
-      const error = UserErrors[UserErrorCode.USER_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
     return user;
   }
@@ -109,11 +103,7 @@ export class UsersService {
         ].filter(Boolean) as FindOptionsWhere<User>[],
       });
       if (duplicate && duplicate.id !== id) {
-        const error = UserErrors[UserErrorCode.USER_ALREADY_EXISTS];
-        throw new ConflictException({
-          message: error.message,
-          code: error.code,
-        });
+        throw new ConflictException(UserErrors.USER_ALREADY_EXISTS);
       }
     }
 
@@ -138,16 +128,14 @@ export class UsersService {
   async remove(id: string): Promise<void> {
     const res = await this.usersRepository.delete(id);
     if (!res.affected) {
-      const error = UserErrors[UserErrorCode.USER_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
   }
 
   async getProfile(userId: string): Promise<UserProfileResponseDto> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
-      const error = UserErrors[UserErrorCode.USER_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
 
     const stats = await this.getUserStats(userId);
@@ -170,11 +158,7 @@ export class UsersService {
         where: { username: dto.username },
       });
       if (existingUser && existingUser.id !== userId) {
-        const error = UserErrors[UserErrorCode.USER_ALREADY_EXISTS];
-        throw new ConflictException({
-          message: 'Username is already taken',
-          code: error.code,
-        });
+        throw new ConflictException(UserErrors.USER_ALREADY_EXISTS);
       }
     }
 
@@ -259,21 +243,22 @@ export class UsersService {
     return sanitizeUser(updated);
   }
 
-  async getUserStats(userId: string) {
+  async getUserStats(userId: string): Promise<Record<string, unknown>> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
-      const error = UserErrors[UserErrorCode.USER_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
 
-    if (user.userType === 'author') {
+    if (user.userType === UserType.AUTHOR) {
       return this.getAuthorStatsData(userId);
-    } else {
-      return this.getReaderStatsData(userId);
     }
+
+    return this.getReaderStatsData(userId);
   }
 
-  private async getAuthorStatsData(authorId: string) {
+  private async getAuthorStatsData(
+    authorId: string,
+  ): Promise<Record<string, unknown>> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -340,7 +325,9 @@ export class UsersService {
     };
   }
 
-  private async getReaderStatsData(readerId: string) {
+  private async getReaderStatsData(
+    readerId: string,
+  ): Promise<Record<string, unknown>> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
@@ -417,33 +404,27 @@ export class UsersService {
   async getAuthorStats(
     authorId: string,
     requestingUserId: string,
-    requestingUserType?: string,
-  ) {
+    requestingUserType?: UserType,
+  ): Promise<{
+    author: UserPublicResponseDto;
+    stats: Record<string, unknown>;
+  }> {
     const author = await this.usersRepository.findOne({
       where: { id: authorId },
     });
     if (!author) {
-      const error = UserErrors[UserErrorCode.USER_NOT_FOUND];
-      throw new NotFoundException({
-        message: 'Author not found',
-        code: error.code,
-      });
+      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
 
-    if (author.userType !== 'author') {
-      const error = UserErrors[UserErrorCode.USER_NOT_AUTHOR];
-      throw new ForbiddenException({
-        message: error.message,
-        code: error.code,
-      });
+    if (author.userType !== UserType.AUTHOR) {
+      throw new ForbiddenException(UserErrors.USER_NOT_AUTHOR);
     }
 
-    if (authorId !== requestingUserId && requestingUserType !== 'author') {
-      const error = UserErrors[UserErrorCode.USER_ACCESS_DENIED];
-      throw new ForbiddenException({
-        message: 'Access denied to author stats',
-        code: error.code,
-      });
+    if (
+      authorId !== requestingUserId &&
+      requestingUserType !== UserType.AUTHOR
+    ) {
+      throw new ForbiddenException(UserErrors.USER_ACCESS_DENIED);
     }
 
     const stats = await this.getAuthorStatsData(authorId);
@@ -458,8 +439,7 @@ export class UsersService {
   async getMyStats(userId: string) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
-      const error = UserErrors[UserErrorCode.USER_NOT_FOUND];
-      throw new NotFoundException({ message: error.message, code: error.code });
+      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
     }
 
     const stats = await this.getUserStats(userId);
@@ -627,16 +607,15 @@ export class UsersService {
   }
 
   private async getAverageResponseTime(authorId: string): Promise<number> {
-    const applications = await this.applicationRepository
-      .createQueryBuilder('application')
-      .leftJoin('application.book', 'book')
-      .select('application.appliedAt', 'appliedAt')
-      .addSelect('application.respondedAt', 'respondedAt')
-      .where('book.authorId = :authorId', { authorId })
-      .andWhere('application.respondedAt IS NOT NULL')
-      .getMany();
+    const applications = await this.applicationRepository.find({
+      where: {
+        book: { authorId },
+        respondedAt: MoreThanOrEqual(new Date(0)),
+      },
+      select: ['appliedAt', 'respondedAt'],
+    });
 
-    if (applications.length === 0) {
+    if (!applications || applications.length === 0) {
       return 0;
     }
 

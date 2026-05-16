@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional } from 'class-validator';
+import { IsEnum } from 'class-validator';
 import { ReadingStatus } from '../enums';
 import { ApiProperty } from '@nestjs/swagger';
 

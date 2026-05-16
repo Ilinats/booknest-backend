@@ -1,19 +1,32 @@
 import {
+  BadRequestException,
+  ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
-  ConflictException,
-  BadRequestException,
   Optional,
-  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, In } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { Friend } from './entity/friend.entity';
-import { FriendStatus } from './enums';
+import { FriendRequestType, FriendStatus, FriendsListSortBy } from './enums';
 import { User } from '../users/entity/user.entity';
 import { FriendErrorCode } from './errors';
 import { sanitizeUserPublic } from '../common/utils/user-sanitizer.util';
 import { UserActivityService } from '../user-activity/user-activity.service';
+import { UserType } from '../users/enums';
+import { NotificationService } from '../notifications/notification.service';
+
+type FriendListItem = {
+  user: ReturnType<typeof sanitizeUserPublic>;
+  friendshipCreatedAt: Date;
+};
+
+type FriendSearchResult = {
+  user: ReturnType<typeof sanitizeUserPublic>;
+  friendshipStatus: FriendStatus | null;
+  isRequester: boolean;
+};
 
 @Injectable()
 export class FriendsService {
@@ -23,8 +36,8 @@ export class FriendsService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @Optional()
-    @Inject('NotificationService')
-    private readonly notificationService?: any,
+    @Inject(NotificationService)
+    private readonly notificationService?: NotificationService,
     @Optional()
     @Inject(UserActivityService)
     private readonly userActivityService?: UserActivityService,
@@ -33,13 +46,9 @@ export class FriendsService {
   async sendFriendRequest(
     requesterId: string,
     addresseeUsername: string,
-    requesterUserType?: string,
+    requesterUserType?: UserType,
   ): Promise<Friend> {
-    if (requesterId === addresseeUsername) {
-      throw new BadRequestException(FriendErrorCode.CANNOT_FRIEND_SELF);
-    }
-
-    if (requesterUserType === 'author') {
+    if (requesterUserType === UserType.AUTHOR) {
       throw new BadRequestException(FriendErrorCode.AUTHORS_CANNOT_FRIEND);
     }
 
@@ -51,20 +60,16 @@ export class FriendsService {
       throw new NotFoundException(FriendErrorCode.USER_NOT_FOUND);
     }
 
-    const existingFriendship = await this.friendRepository.findOne({
-      where: [
-        { requesterId, addresseeId: addressee.id },
-        { requesterId: addressee.id, addresseeId: requesterId },
-      ],
-    });
-
-    if (existingFriendship) {
-      if (existingFriendship.status === 'accepted') {
-        throw new ConflictException(FriendErrorCode.ALREADY_FRIENDS);
-      } else if (existingFriendship.status === 'pending') {
-        throw new ConflictException(FriendErrorCode.REQUEST_ALREADY_PENDING);
-      }
+    if (addressee.id === requesterId) {
+      throw new BadRequestException(FriendErrorCode.CANNOT_FRIEND_SELF);
     }
+
+    const existingFriendship = await this.findExistingFriendship(
+      requesterId,
+      addressee.id,
+    );
+
+    this.ensureNoActiveFriendship(existingFriendship);
 
     const friendRequest = this.friendRepository.create({
       requesterId,
@@ -74,33 +79,7 @@ export class FriendsService {
 
     const saved = await this.friendRepository.save(friendRequest);
 
-    if (this.notificationService) {
-      const requester = await this.userRepository.findOne({
-        where: { id: requesterId },
-      });
-      const requesterName = requester
-        ? `${requester.firstName} ${requester.lastName}`
-        : 'Someone';
-      this.notificationService
-        .notifyFriendRequestReceived(addressee.id, requesterId, requesterName)
-        .then((notification) => {
-          if (notification) {
-            console.log(
-              `Friend request notification created for user ${addressee.id}`,
-            );
-          } else {
-            console.log(
-              `Friend request notification skipped for user ${addressee.id} (likely due to preferences)`,
-            );
-          }
-        })
-        .catch((err: any) => {
-          console.error('Failed to send friend request notification:', err);
-          console.error('Error stack:', err?.stack);
-        });
-    } else {
-      console.warn('NotificationService not available in FriendsService');
-    }
+    await this.notifyFriendRequestReceived(addressee.id, requesterId);
 
     return saved;
   }
@@ -120,62 +99,7 @@ export class FriendsService {
     friendRequest.status = FriendStatus.ACCEPTED;
     const saved = await this.friendRepository.save(friendRequest);
 
-    if (this.notificationService) {
-      const accepter = await this.userRepository.findOne({
-        where: { id: userId },
-      });
-      const requester = await this.userRepository.findOne({
-        where: { id: requesterId },
-      });
-      const accepterName = accepter
-        ? `${accepter.firstName} ${accepter.lastName}`
-        : 'Someone';
-      const requesterName = requester
-        ? `${requester.firstName} ${requester.lastName}`
-        : 'Someone';
-
-      this.notificationService
-        .notifyFriendRequestAccepted(requesterId, userId, accepterName)
-        .then((notification) => {
-          if (notification) {
-            console.log(
-              `Friend request accepted notification created for requester ${requesterId}`,
-            );
-          } else {
-            console.log(
-              `Friend request accepted notification skipped for requester ${requesterId} (likely due to preferences)`,
-            );
-          }
-        })
-        .catch((err: any) => {
-          console.error(
-            'Failed to send friend accepted notification to requester:',
-            err,
-          );
-          console.error('Error stack:', err?.stack);
-        });
-
-      this.notificationService
-        .notifyYouAcceptedFriendRequest(userId, requesterId, requesterName)
-        .then((notification) => {
-          if (notification) {
-            console.log(
-              `You accepted friend request notification created for accepter ${userId}`,
-            );
-          } else {
-            console.log(
-              `You accepted friend request notification skipped for accepter ${userId} (likely due to preferences)`,
-            );
-          }
-        })
-        .catch((err: any) => {
-          console.error(
-            'Failed to send you accepted notification to accepter:',
-            err,
-          );
-          console.error('Error stack:', err?.stack);
-        });
-    }
+    await this.notifyFriendRequestAccepted(requesterId, userId);
 
     return saved;
   }
@@ -194,62 +118,7 @@ export class FriendsService {
 
     await this.friendRepository.remove(friendRequest);
 
-    if (this.notificationService) {
-      const decliner = await this.userRepository.findOne({
-        where: { id: userId },
-      });
-      const requester = await this.userRepository.findOne({
-        where: { id: requesterId },
-      });
-      const declinerName = decliner
-        ? `${decliner.firstName} ${decliner.lastName}`
-        : 'Someone';
-      const requesterName = requester
-        ? `${requester.firstName} ${requester.lastName}`
-        : 'Someone';
-
-      this.notificationService
-        .notifyFriendRequestDeclined(requesterId, userId, declinerName)
-        .then((notification) => {
-          if (notification) {
-            console.log(
-              `Friend request declined notification created for requester ${requesterId}`,
-            );
-          } else {
-            console.log(
-              `Friend request declined notification skipped for requester ${requesterId} (likely due to preferences)`,
-            );
-          }
-        })
-        .catch((err: any) => {
-          console.error(
-            'Failed to send friend declined notification to requester:',
-            err,
-          );
-          console.error('Error stack:', err?.stack);
-        });
-
-      this.notificationService
-        .notifyYouDeclinedFriendRequest(userId, requesterId, requesterName)
-        .then((notification) => {
-          if (notification) {
-            console.log(
-              `You declined friend request notification created for decliner ${userId}`,
-            );
-          } else {
-            console.log(
-              `You declined friend request notification skipped for decliner ${userId} (likely due to preferences)`,
-            );
-          }
-        })
-        .catch((err: any) => {
-          console.error(
-            'Failed to send you declined notification to decliner:',
-            err,
-          );
-          console.error('Error stack:', err?.stack);
-        });
-    }
+    await this.notifyFriendRequestDeclined(requesterId, userId);
   }
 
   async unfriend(userId: string, friendId: string): Promise<void> {
@@ -291,11 +160,11 @@ export class FriendsService {
 
   async getFriendRequests(
     userId: string,
-    type: 'sent' | 'received' = 'received',
+    type: FriendRequestType = FriendRequestType.RECEIVED,
   ): Promise<Friend[]> {
     const where: FindOptionsWhere<Friend> = { status: FriendStatus.PENDING };
 
-    if (type === 'sent') {
+    if (type === FriendRequestType.SENT) {
       where.requesterId = userId;
     } else {
       where.addresseeId = userId;
@@ -368,7 +237,7 @@ export class FriendsService {
 
   async getFriendsList(
     userId: string,
-    sortBy?: 'alphabetical' | 'recently_added' | 'most_active',
+    sortBy?: FriendsListSortBy,
   ): Promise<ReturnType<typeof sanitizeUserPublic>[]> {
     const friendships = await this.friendRepository.find({
       where: [
@@ -379,62 +248,10 @@ export class FriendsService {
       order: { createdAt: 'DESC' },
     });
 
-    let friends = friendships.map((friendship) => {
-      const friend =
-        friendship.requesterId === userId
-          ? friendship.addressee
-          : friendship.requester;
-      return {
-        user: sanitizeUserPublic(friend!),
-        friendshipCreatedAt: friendship.createdAt,
-      };
-    });
+    const friends = this.mapFriendshipsToFriendListItems(friendships, userId);
+    const sortedFriends = await this.sortFriends(friends, sortBy);
 
-    if (sortBy === 'alphabetical') {
-      friends = friends.sort((a, b) => {
-        const nameA = `${a.user.firstName} ${a.user.lastName}`.toLowerCase();
-        const nameB = `${b.user.firstName} ${b.user.lastName}`.toLowerCase();
-        return nameA.localeCompare(nameB);
-      });
-    } else if (sortBy === 'recently_added') {
-    } else if (sortBy === 'most_active') {
-      if (this.userActivityService) {
-        const friendIds = friends.map((f) => f.user.id);
-        const lastActivities = await Promise.all(
-          friendIds.map(async (friendId) => {
-            const stats =
-              await this.userActivityService!.getActivityStats(friendId);
-            return {
-              userId: friendId,
-              lastActivity: stats.lastActivity,
-              totalActivities: stats.totalActivities,
-            };
-          }),
-        );
-
-        const activityMap = new Map(lastActivities.map((a) => [a.userId, a]));
-
-        friends = friends.sort((a, b) => {
-          const activityA = activityMap.get(a.user.id);
-          const activityB = activityMap.get(b.user.id);
-
-          if (activityA?.lastActivity && activityB?.lastActivity) {
-            return (
-              activityB.lastActivity.getTime() -
-              activityA.lastActivity.getTime()
-            );
-          }
-          if (activityA?.lastActivity) return -1;
-          if (activityB?.lastActivity) return 1;
-
-          const totalA = activityA?.totalActivities || 0;
-          const totalB = activityB?.totalActivities || 0;
-          return totalB - totalA;
-        });
-      }
-    }
-
-    return friends.map((f) => f.user);
+    return sortedFriends.map((f) => f.user);
   }
 
   async getSentRequestsList(
@@ -475,67 +292,24 @@ export class FriendsService {
     userId: string,
     query: string,
     limit: number = 20,
-  ): Promise<
-    Array<{
-      user: ReturnType<typeof sanitizeUserPublic>;
-      friendshipStatus: FriendStatus | null;
-      isRequester: boolean;
-    }>
-  > {
-    if (!query || query.trim().length === 0) {
+  ): Promise<FriendSearchResult[]> {
+    if (!this.hasSearchQuery(query)) {
       return [];
     }
 
-    const searchTerm = `%${query.trim()}%`;
-
-    const users = await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.id != :userId', { userId })
-      .andWhere('user.isActive = :isActive', { isActive: true })
-      .andWhere(
-        "(user.username ILIKE :search OR user.firstName ILIKE :search OR user.lastName ILIKE :search OR CONCAT(user.firstName, ' ', user.lastName) ILIKE :search)",
-        { search: searchTerm },
-      )
-      .limit(limit)
-      .getMany();
+    const users = await this.findSearchableUsers(userId, query, limit);
 
     if (users.length === 0) {
       return [];
     }
 
-    const userIds = users.map((u) => u.id);
+    const friendships = await this.findFriendshipsForUsers(
+      userId,
+      users.map((u) => u.id),
+    );
+    const friendshipMap = this.buildFriendshipMap(userId, friendships);
 
-    const friendships = await this.friendRepository
-      .createQueryBuilder('friend')
-      .where(
-        '(friend.requesterId = :userId AND friend.addresseeId IN (:...userIds)) OR (friend.addresseeId = :userId AND friend.requesterId IN (:...userIds))',
-        { userId, userIds },
-      )
-      .getMany();
-
-    const friendshipMap = new Map<
-      string,
-      { status: FriendStatus; isRequester: boolean }
-    >();
-    friendships.forEach((friendship) => {
-      const otherUserId =
-        friendship.requesterId === userId
-          ? friendship.addresseeId
-          : friendship.requesterId;
-      friendshipMap.set(otherUserId, {
-        status: friendship.status,
-        isRequester: friendship.requesterId === userId,
-      });
-    });
-
-    return users.map((user) => {
-      const friendship = friendshipMap.get(user.id);
-      return {
-        user: sanitizeUserPublic(user),
-        friendshipStatus: friendship?.status || null,
-        isRequester: friendship?.isRequester || false,
-      };
-    });
+    return this.mapUsersWithFriendshipStatus(users, friendshipMap);
   }
 
   async cancelFriendRequest(
@@ -551,5 +325,334 @@ export class FriendsService {
     }
 
     await this.friendRepository.remove(friendRequest);
+  }
+
+  private async findExistingFriendship(
+    requesterId: string,
+    addresseeId: string,
+  ): Promise<Friend | null> {
+    return this.friendRepository.findOne({
+      where: [
+        { requesterId, addresseeId },
+        { requesterId: addresseeId, addresseeId: requesterId },
+      ],
+    });
+  }
+
+  private ensureNoActiveFriendship(existingFriendship: Friend | null): void {
+    if (!existingFriendship) {
+      return;
+    }
+
+    if (existingFriendship.status === FriendStatus.ACCEPTED) {
+      throw new ConflictException(FriendErrorCode.ALREADY_FRIENDS);
+    }
+
+    if (existingFriendship.status === FriendStatus.PENDING) {
+      throw new ConflictException(FriendErrorCode.REQUEST_ALREADY_PENDING);
+    }
+  }
+
+  private async getUserFullNameOrDefault(userId: string): Promise<string> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      return 'Someone';
+    }
+
+    return `${user.firstName} ${user.lastName}`;
+  }
+
+  private async safeNotify(
+    notify: (service: NotificationService) => Promise<unknown | null>,
+    context: string,
+  ): Promise<void> {
+    if (!this.notificationService) {
+      console.warn('NotificationService not available in FriendsService');
+      return;
+    }
+
+    try {
+      const notification = await notify(this.notificationService);
+
+      if (notification) {
+        console.log(`${context} notification created`);
+      } else {
+        console.log(
+          `${context} notification skipped (likely due to preferences)`,
+        );
+      }
+    } catch (error) {
+      console.error(`Failed to send ${context} notification:`, error);
+      console.error('Error stack:', (error as Error)?.stack);
+    }
+  }
+
+  private async notifyFriendRequestReceived(
+    recipientId: string,
+    requesterId: string,
+  ): Promise<void> {
+    const requesterName = await this.getUserFullNameOrDefault(requesterId);
+
+    await this.safeNotify(
+      (service) =>
+        service.notifyFriendRequestReceived(
+          recipientId,
+          requesterId,
+          requesterName,
+        ),
+      `Friend request for user ${recipientId}`,
+    );
+  }
+
+  private async notifyFriendRequestAccepted(
+    requesterId: string,
+    accepterId: string,
+  ): Promise<void> {
+    const accepterName = await this.getUserFullNameOrDefault(accepterId);
+
+    await this.safeNotify(
+      (service) =>
+        service.notifyFriendRequestAccepted(
+          requesterId,
+          accepterId,
+          accepterName,
+        ),
+      `Friend request accepted for requester ${requesterId}`,
+    );
+
+    const requesterName = await this.getUserFullNameOrDefault(requesterId);
+
+    await this.safeNotify(
+      (service) =>
+        service.notifyYouAcceptedFriendRequest(
+          accepterId,
+          requesterId,
+          requesterName,
+        ),
+      `You accepted friend request for accepter ${accepterId}`,
+    );
+  }
+
+  private async notifyFriendRequestDeclined(
+    requesterId: string,
+    declinerId: string,
+  ): Promise<void> {
+    const declinerName = await this.getUserFullNameOrDefault(declinerId);
+
+    await this.safeNotify(
+      (service) =>
+        service.notifyFriendRequestDeclined(
+          requesterId,
+          declinerId,
+          declinerName,
+        ),
+      `Friend request declined for requester ${requesterId}`,
+    );
+
+    const requesterName = await this.getUserFullNameOrDefault(requesterId);
+
+    await this.safeNotify(
+      (service) =>
+        service.notifyYouDeclinedFriendRequest(
+          declinerId,
+          requesterId,
+          requesterName,
+        ),
+      `You declined friend request for decliner ${declinerId}`,
+    );
+  }
+
+  private async sortFriendsByActivity(
+    friends: FriendListItem[],
+  ): Promise<FriendListItem[]> {
+    if (!this.userActivityService) {
+      return friends;
+    }
+
+    const friendIds = friends.map((f) => f.user.id);
+    const activityMap = await this.buildActivityMap(friendIds);
+
+    return friends.sort((a, b) =>
+      this.compareFriendsByActivity(a, b, activityMap),
+    );
+  }
+
+  private mapFriendshipsToFriendListItems(
+    friendships: Friend[],
+    userId: string,
+  ): FriendListItem[] {
+    return friendships.map((friendship) => {
+      const friend =
+        friendship.requesterId === userId
+          ? friendship.addressee
+          : friendship.requester;
+
+      return {
+        user: sanitizeUserPublic(friend!),
+        friendshipCreatedAt: friendship.createdAt,
+      };
+    });
+  }
+
+  private async sortFriends(
+    friends: FriendListItem[],
+    sortBy?: FriendsListSortBy,
+  ): Promise<FriendListItem[]> {
+    if (!sortBy) {
+      return friends;
+    }
+
+    if (sortBy === FriendsListSortBy.ALPHABETICAL) {
+      return [...friends].sort((a, b) => {
+        const nameA = `${a.user.firstName} ${a.user.lastName}`.toLowerCase();
+        const nameB = `${b.user.firstName} ${b.user.lastName}`.toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+    }
+
+    if (sortBy === FriendsListSortBy.RECENTLY_ADDED) {
+      return friends;
+    }
+
+    return this.sortFriendsByActivity(friends);
+  }
+
+  private hasSearchQuery(query: string): boolean {
+    return Boolean(query && query.trim().length > 0);
+  }
+
+  private createSearchTerm(query: string): string {
+    return `%${query.trim()}%`;
+  }
+
+  private async findSearchableUsers(
+    userId: string,
+    query: string,
+    limit: number,
+  ): Promise<User[]> {
+    const searchTerm = this.createSearchTerm(query);
+
+    return this.userRepository
+      .createQueryBuilder('user')
+      .where('user.id != :userId', { userId })
+      .andWhere('user.isActive = :isActive', { isActive: true })
+      .andWhere(
+        "(user.username ILIKE :search OR user.firstName ILIKE :search OR user.lastName ILIKE :search OR CONCAT(user.firstName, ' ', user.lastName) ILIKE :search)",
+        { search: searchTerm },
+      )
+      .limit(limit)
+      .getMany();
+  }
+
+  private async findFriendshipsForUsers(
+    userId: string,
+    userIds: string[],
+  ): Promise<Friend[]> {
+    return this.friendRepository
+      .createQueryBuilder('friend')
+      .where(
+        '(friend.requesterId = :userId AND friend.addresseeId IN (:...userIds)) OR (friend.addresseeId = :userId AND friend.requesterId IN (:...userIds))',
+        { userId, userIds },
+      )
+      .getMany();
+  }
+
+  private buildFriendshipMap(
+    userId: string,
+    friendships: Friend[],
+  ): Map<string, { status: FriendStatus; isRequester: boolean }> {
+    const map = new Map<
+      string,
+      {
+        status: FriendStatus;
+        isRequester: boolean;
+      }
+    >();
+
+    friendships.forEach((friendship) => {
+      const otherUserId =
+        friendship.requesterId === userId
+          ? friendship.addresseeId
+          : friendship.requesterId;
+
+      map.set(otherUserId, {
+        status: friendship.status,
+        isRequester: friendship.requesterId === userId,
+      });
+    });
+
+    return map;
+  }
+
+  private mapUsersWithFriendshipStatus(
+    users: User[],
+    friendshipMap: Map<string, { status: FriendStatus; isRequester: boolean }>,
+  ): FriendSearchResult[] {
+    return users.map((user) => {
+      const friendship = friendshipMap.get(user.id);
+
+      return {
+        user: sanitizeUserPublic(user),
+        friendshipStatus: friendship?.status ?? null,
+        isRequester: friendship?.isRequester ?? false,
+      };
+    });
+  }
+
+  private async buildActivityMap(friendIds: string[]): Promise<
+    Map<
+      string,
+      {
+        userId: string;
+        lastActivity?: Date;
+        totalActivities: number;
+      }
+    >
+  > {
+    if (!this.userActivityService) {
+      return new Map();
+    }
+
+    const userActivityService = this.userActivityService;
+
+    const summaries = await Promise.all(
+      friendIds.map(async (friendId) => {
+        const stats = await userActivityService.getActivityStats(friendId);
+        return {
+          userId: friendId,
+          lastActivity: stats.lastActivity,
+          totalActivities: stats.totalActivities,
+        };
+      }),
+    );
+
+    return new Map(summaries.map((summary) => [summary.userId, summary]));
+  }
+
+  private compareFriendsByActivity(
+    a: FriendListItem,
+    b: FriendListItem,
+    activityMap: Map<
+      string,
+      { userId: string; lastActivity?: Date; totalActivities: number }
+    >,
+  ): number {
+    const activityA = activityMap.get(a.user.id);
+    const activityB = activityMap.get(b.user.id);
+
+    if (activityA?.lastActivity && activityB?.lastActivity) {
+      return (
+        activityB.lastActivity.getTime() - activityA.lastActivity.getTime()
+      );
+    }
+
+    if (activityA?.lastActivity) return -1;
+    if (activityB?.lastActivity) return 1;
+
+    const totalA = activityA?.totalActivities ?? 0;
+    const totalB = activityB?.totalActivities ?? 0;
+
+    return totalB - totalA;
   }
 }

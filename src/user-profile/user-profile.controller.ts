@@ -1,17 +1,17 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
   Body,
-  Query,
+  Controller,
+  Delete,
+  Get,
   Param,
-  UseGuards,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
   Request,
+  UseGuards,
   UsePipes,
   ValidationPipe,
-  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -26,10 +26,11 @@ import { UserAddressService } from '../user-address/user-address.service';
 import { getUserId } from '../common';
 import { CreateAddressDto, UpdateAddressDto } from '../user-address/dto';
 import {
-  UpdateSocialMediaDto,
-  UpdatePrivacySettingsDto,
   UpdateNotificationSettingsDto,
+  UpdatePrivacySettingsDto,
+  UpdateSocialMediaDto,
 } from './dto';
+import { Request as ExpressRequest } from 'express';
 
 @ApiTags('User Profiles')
 @Controller('profiles')
@@ -49,7 +50,10 @@ export class UserProfileController {
   @ApiResponse({ status: 201, description: 'Address created successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async createAddress(@Request() req: any, @Body() dto: CreateAddressDto) {
+  async createAddress(
+    @Request() req: ExpressRequest,
+    @Body() dto: CreateAddressDto,
+  ) {
     const userId = getUserId(req);
     return this.userAddressService.create(userId, dto);
   }
@@ -62,10 +66,10 @@ export class UserProfileController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async getPublicProfile(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Param('usernameOrId') usernameOrId: string,
   ) {
-    const viewerId = req.user?.sub || req.user?.id;
+    const viewerId = getUserId(req);
     return this.userProfileService.getPublicProfile(usernameOrId, viewerId);
   }
 
@@ -73,7 +77,7 @@ export class UserProfileController {
   @ApiOperation({ summary: 'Get current user profile (Authenticated)' })
   @ApiResponse({ status: 200, description: 'User profile' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getMyProfile(@Request() req: any) {
+  async getMyProfile(@Request() req: ExpressRequest) {
     const userId = getUserId(req);
     return this.userProfileService.getProfile(userId);
   }
@@ -82,7 +86,10 @@ export class UserProfileController {
   @ApiOperation({ summary: 'Get current user activity (Authenticated)' })
   @ApiResponse({ status: 200, description: 'User activity' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getMyActivity(@Request() req: any, @Param('limit') limit?: number) {
+  async getMyActivity(
+    @Request() req: ExpressRequest,
+    @Param('limit') limit?: number,
+  ) {
     const userId = getUserId(req);
     return this.userActivityService.getUserActivity(userId, limit);
   }
@@ -92,7 +99,7 @@ export class UserProfileController {
   @ApiResponse({ status: 200, description: 'Public user activity' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getMyPublicActivity(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Param('limit') limit?: number,
   ) {
     const userId = getUserId(req);
@@ -104,7 +111,7 @@ export class UserProfileController {
   @ApiResponse({ status: 200, description: 'Recent user activity' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getMyRecentActivity(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Param('days') days?: number,
     @Param('limit') limit?: number,
   ) {
@@ -118,7 +125,7 @@ export class UserProfileController {
   })
   @ApiResponse({ status: 200, description: 'User activity statistics' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getMyActivityStats(@Request() req: any) {
+  async getMyActivityStats(@Request() req: ExpressRequest) {
     const userId = getUserId(req);
     return this.userActivityService.getActivityStats(userId);
   }
@@ -129,7 +136,7 @@ export class UserProfileController {
   })
   @ApiResponse({ status: 200, description: 'List of user addresses' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getMyAddresses(@Request() req: any) {
+  async getMyAddresses(@Request() req: ExpressRequest) {
     const userId = getUserId(req);
     return this.userAddressService.findByUserId(userId);
   }
@@ -144,7 +151,7 @@ export class UserProfileController {
   @ApiResponse({ status: 403, description: 'Activity is private' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async getUserRecentActivity(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Param('usernameOrId') usernameOrId: string,
     @Query('days') days?: number,
     @Query('limit') limit?: number,
@@ -167,7 +174,7 @@ export class UserProfileController {
   @ApiResponse({ status: 404, description: 'Address not found' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async updateAddress(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Param('addressId', ParseUUIDPipe) addressId: string,
     @Body() dto: UpdateAddressDto,
   ) {
@@ -186,7 +193,7 @@ export class UserProfileController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async updateSocialMedia(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Body() dto: UpdateSocialMediaDto,
   ) {
     const userId = getUserId(req);
@@ -212,7 +219,7 @@ export class UserProfileController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async updatePrivacySettings(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Body() dto: UpdatePrivacySettingsDto,
   ) {
     const userId = getUserId(req);
@@ -230,7 +237,7 @@ export class UserProfileController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async updateNotificationSettings(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Body() dto: UpdateNotificationSettingsDto,
   ) {
     const userId = getUserId(req);
@@ -249,7 +256,7 @@ export class UserProfileController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Address not found' })
   async deleteAddress(
-    @Request() req: any,
+    @Request() req: ExpressRequest,
     @Param('addressId', ParseUUIDPipe) addressId: string,
   ) {
     const userId = getUserId(req);

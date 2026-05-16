@@ -148,6 +148,7 @@ export class AuthorFollowService {
       const isAuthor =
         userType === UserType.AUTHOR && book.authorId === followerId;
       if (!isAuthor) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { fileUrl, fileSize, fileType, ...bookWithoutFiles } = book;
         return bookWithoutFiles as Book;
       }

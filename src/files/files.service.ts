@@ -11,7 +11,8 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
+import { Readable } from 'stream';
 import { FileErrorCode } from './errors';
 
 @Injectable()
@@ -115,7 +116,7 @@ export class FilesService {
 
     const fileExtension =
       file.originalname.split('.').pop()?.toLowerCase() || 'unknown';
-    const uniqueFilename = `${uuidv4()}.${fileExtension}`;
+    const uniqueFilename = `${randomUUID()}.${fileExtension}`;
     const fileKey = `${folder}/${uniqueFilename}`;
 
     try {
@@ -148,6 +149,33 @@ export class FilesService {
     }
   }
 
+  async getObjectBuffer(fileKey: string): Promise<Buffer> {
+    try {
+      const result = await this.s3Client.send(
+        new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: fileKey,
+        }),
+      );
+      if (!result.Body) {
+        throw new NotFoundException(FileErrorCode.FILE_NOT_FOUND);
+      }
+      return await this.readStreamToBuffer(result.Body as Readable);
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      console.error('S3 get object error:', error);
+      throw new NotFoundException(FileErrorCode.FILE_ACCESS_DENIED);
+    }
+  }
+
+  private async readStreamToBuffer(stream: Readable): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
   async getFileDownloadUrl(
     fileKey: string,
     expiresIn: number = 3600,
@@ -168,7 +196,7 @@ export class FilesService {
 
   extractFileKeyFromUrl(fileUrl: string): string | null {
     if (!fileUrl) return null;
-    
+
     if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
       return fileUrl;
     }
@@ -279,7 +307,7 @@ export class FilesService {
 
     const fileExtension =
       file.originalname.split('.').pop()?.toLowerCase() || 'unknown';
-    const uniqueFilename = `${uuidv4()}.${fileExtension}`;
+    const uniqueFilename = `${randomUUID()}.${fileExtension}`;
     const fileKey = `${folder}/${uniqueFilename}`;
 
     try {

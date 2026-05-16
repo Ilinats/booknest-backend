@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
-import { UserActivity } from './entity/user-activity.entity';
+import { In, Repository } from 'typeorm';
+import {
+  UserActivity,
+  UserActivityMetadata,
+} from './entity/user-activity.entity';
 import { ActivityType } from './enums';
 import { User } from '../users/entity';
 import { UserProfileService } from '../user-profile/user-profile.service';
-import { PrivacyLevel } from '../user-profile/enums';
 import { UserType } from '../users/enums';
 
 @Injectable()
@@ -21,7 +23,7 @@ export class UserActivityService {
   async createActivity(
     userId: string,
     activityType: ActivityType,
-    metadata?: Record<string, any>,
+    metadata?: UserActivityMetadata,
     bookId?: string,
     applicationId?: string,
   ): Promise<UserActivity> {
@@ -79,28 +81,9 @@ export class UserActivityService {
       );
 
       if (canView.canView) {
-        if (activity.book) {
-          const isAuthor =
-            userType === UserType.AUTHOR && activity.book.authorId === userId;
-          if (!isAuthor) {
-            const { fileUrl, fileSize, fileType, ...bookWithoutFiles } =
-              activity.book;
-            activity.book = bookWithoutFiles as any;
-          }
-        }
-
-        if (activity.application?.book) {
-          const isAuthor =
-            userType === UserType.AUTHOR &&
-            activity.application.book.authorId === userId;
-          if (!isAuthor) {
-            const { fileUrl, fileSize, fileType, ...bookWithoutFiles } =
-              activity.application.book;
-            activity.application.book = bookWithoutFiles as any;
-          }
-        }
-
-        filteredActivities.push(activity);
+        filteredActivities.push(
+          this.sanitizeActivityBooksForUser(activity, userId, userType),
+        );
 
         if (filteredActivities.length >= limit) {
           break;
@@ -216,19 +199,10 @@ export class UserActivityService {
       .groupBy('activity.activityType')
       .getRawMany();
 
-    const result: Record<ActivityType, number> = {
-      book_applied: 0,
-      book_approved: 0,
-      book_rejected: 0,
-      review_posted: 0,
-      book_started: 0,
-      book_completed: 0,
-      book_published: 0,
-      profile_updated: 0,
-    };
+    const result = this.createEmptyActivityTypeCounts();
 
     activities.forEach((activity) => {
-      result[activity.type as ActivityType] = parseInt(activity.count);
+      result[activity.type as ActivityType] = parseInt(activity.count, 10);
     });
 
     return result;
@@ -347,5 +321,54 @@ export class UserActivityService {
     return this.createActivity(userId, ActivityType.PROFILE_UPDATED, {
       changes,
     });
+  }
+
+  private sanitizeBookFiles<
+    T extends { fileUrl?: unknown; fileSize?: unknown; fileType?: unknown },
+  >(book: T): Omit<T, 'fileUrl' | 'fileSize' | 'fileType'> {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { fileUrl, fileSize, fileType, ...safeBook } = book;
+    return safeBook;
+  }
+
+  private sanitizeActivityBooksForUser(
+    activity: UserActivity,
+    viewerId: string,
+    viewerType?: UserType,
+  ): UserActivity {
+    const isAuthorViewer = viewerType === UserType.AUTHOR;
+
+    if (activity.book) {
+      const isAuthorOfBook =
+        isAuthorViewer && activity.book.authorId === viewerId;
+      if (!isAuthorOfBook) {
+        activity.book = this.sanitizeBookFiles(activity.book) as any;
+      }
+    }
+
+    if (activity.application?.book) {
+      const isAuthorOfApplicationBook =
+        isAuthorViewer && activity.application.book.authorId === viewerId;
+      if (!isAuthorOfApplicationBook) {
+        activity.application.book = this.sanitizeBookFiles(
+          activity.application.book,
+        ) as any;
+      }
+    }
+
+    return activity;
+  }
+
+  private createEmptyActivityTypeCounts(): Record<ActivityType, number> {
+    return {
+      [ActivityType.BOOK_APPLIED]: 0,
+      [ActivityType.BOOK_APPROVED]: 0,
+      [ActivityType.BOOK_REJECTED]: 0,
+      [ActivityType.REVIEW_POSTED]: 0,
+      [ActivityType.BOOK_STARTED]: 0,
+      [ActivityType.BOOK_COMPLETED]: 0,
+      [ActivityType.BOOK_PUBLISHED]: 0,
+      [ActivityType.PROFILE_UPDATED]: 0,
+    };
   }
 }

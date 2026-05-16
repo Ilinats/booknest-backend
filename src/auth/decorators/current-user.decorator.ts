@@ -10,10 +10,15 @@ export interface JwtPayload {
   exp?: number;
 }
 
+export function getCurrentUserFromContext(
+  data: keyof JwtPayload | undefined,
+  ctx: ExecutionContext,
+): JwtPayload | string | number | undefined {
+  const request = ctx.switchToHttp().getRequest();
+  const user = request.user as JwtPayload | undefined;
+  return data ? user?.[data] : user;
+}
+
 export const CurrentUser = createParamDecorator<keyof JwtPayload | undefined>(
-  (data: keyof JwtPayload | undefined, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    const user = request.user as JwtPayload | undefined;
-    return data ? user?.[data] : user;
-  },
+  getCurrentUserFromContext,
 );

@@ -1,8 +1,6 @@
-import {
-  Injectable,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Genre } from './entity/genre.entity';
 
 @Injectable()
@@ -13,6 +11,6 @@ export class GenresService {
   ) {}
 
   async findAll(): Promise<Genre[]> {
-    return await this.genreRepository.find({ order: { name: 'ASC' } });
+    return this.genreRepository.find({ order: { name: 'ASC' } });
   }
 }

@@ -94,7 +94,7 @@ export class ReviewsController {
     @CurrentUser() user: JwtPayload | undefined,
     @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
   ) {
-    return this.reviewsService.findOne(reviewId, user?.sub, user?.userType);
+    return this.reviewsService.findOne(reviewId, user?.sub);
   }
 
   @UseGuards(JwtAuthGuard)

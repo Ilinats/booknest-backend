@@ -10,7 +10,7 @@ import { Observable, tap } from 'rxjs';
 export class LoggingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const req = context.switchToHttp().getRequest();
-    const requestId = (req as any).requestId as string | undefined;
+    const requestId = req.requestId as string | undefined;
     const start = Date.now();
 
     return next.handle().pipe(

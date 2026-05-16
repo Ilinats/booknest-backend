@@ -22,4 +22,3 @@ import { AuthModule } from '../auth/auth.module';
   exports: [FriendsService],
 })
 export class FriendsModule {}
-

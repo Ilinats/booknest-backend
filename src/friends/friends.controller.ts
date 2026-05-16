@@ -27,7 +27,7 @@ import {
   JwtPayload,
 } from '../auth/decorators/current-user.decorator';
 import { UserType } from '../users/enums';
-import { FriendStatus } from './enums';
+import { FriendRequestType, FriendStatus, FriendsListSortBy } from './enums';
 
 @ApiTags('Friends')
 @Controller('friends')
@@ -99,7 +99,7 @@ export class FriendsController {
   @ApiQuery({
     name: 'sortBy',
     required: false,
-    enum: ['alphabetical', 'recently_added', 'most_active'],
+    enum: FriendsListSortBy,
     description: 'Sort order for friends list',
   })
   @ApiResponse({
@@ -109,7 +109,7 @@ export class FriendsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getFriendsList(
     @Request() req: any,
-    @Query('sortBy') sortBy?: 'alphabetical' | 'recently_added' | 'most_active',
+    @Query('sortBy') sortBy?: FriendsListSortBy,
   ) {
     const userId = getUserId(req);
     return this.friendsService.getFriendsList(userId, sortBy);
@@ -200,14 +200,14 @@ export class FriendsController {
   @ApiQuery({
     name: 'type',
     required: false,
-    enum: ['sent', 'received'],
+    enum: FriendRequestType,
     description: 'Filter by request type',
   })
   @ApiResponse({ status: 200, description: 'List of friend requests' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getFriendRequests(
     @Request() req: any,
-    @Query('type') type?: 'sent' | 'received',
+    @Query('type') type?: FriendRequestType,
   ) {
     const userId = getUserId(req);
     return this.friendsService.getFriendRequests(userId, type);

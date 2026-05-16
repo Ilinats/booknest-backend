@@ -1,2 +1,3 @@
 export * from './friend-status.enum';
 export * from './friend-request-type.enum';
+export * from './friends-list-sort.enum';

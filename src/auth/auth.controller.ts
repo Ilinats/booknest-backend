@@ -2,14 +2,11 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   Param,
   Post,
   Query,
-  Res,
   UsePipes,
   ValidationPipe,
-  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -35,9 +32,6 @@ import {
   LogoutResponseDto,
   VerificationStatusResponseDto,
 } from './dto';
-import { AuthErrorCode, AuthErrors } from './errors/auth-errors';
-import { UserType } from '../users/enums';
-import { Response } from 'express';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -75,11 +69,7 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async login(
-    @Body() dto: LoginDto,
-    @Res({ passthrough: true }) res: Response,
-    @Query('persist') persist?: string,
-  ): Promise<LoginResponseDto> {
+  async login(@Body() dto: LoginDto): Promise<LoginResponseDto> {
     return this.authService.login(dto);
   }
 

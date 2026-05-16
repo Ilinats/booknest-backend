@@ -6,5 +6,5 @@ export class UploadAvatarDto {
     format: 'binary',
     description: 'Avatar image file',
   })
-  avatar!: any;
+  avatar!: string;
 }

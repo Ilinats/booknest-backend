@@ -1,13 +1,17 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Notification } from './entity/notification.entity';
+import {
+  Notification,
+  NotificationDataPayload,
+} from './entity/notification.entity';
 import { NotificationTypeEnum } from './enums';
 import { DeviceTokenService } from './device-token.service';
 import { FirebaseNotificationService } from './firebase-notification.service';
 import { UserProfileService } from '../user-profile/user-profile.service';
 import { createPaginatedResponse } from '../common/utils/pagination.util';
 import { NotificationErrorCode } from './errors';
+import { FindNotificationsDto } from './dto/find-notifications.dto';
 
 @Injectable()
 export class NotificationService {
@@ -26,79 +30,39 @@ export class NotificationService {
     type: NotificationTypeEnum,
     title: string,
     body: string,
-    data?: Record<string, any>,
+    data?: NotificationDataPayload,
   ): Promise<Notification | null> {
-    const profile = await this.userProfileService.getProfile(userId);
-    if (!profile.notificationsEnabled) {
-      this.logger.log(`Notifications disabled for user ${userId}, skipping`);
+    const isEnabled = await this.isNotificationEnabledForUser(userId, type);
+    if (!isEnabled) {
       return null;
     }
 
-    const preferences = profile.notificationPreferences || [];
-
-    if (preferences.length > 0 && !preferences.includes(type)) {
-      this.logger.log(
-        `Notification type ${type} disabled for user ${userId}, skipping`,
-      );
-      return null;
-    }
-
-    const notification = this.notificationRepository.create({
+    const notification = this.createNotificationEntity(
       userId,
       type,
       title,
       body,
-      data: data || {},
-      bookId: data?.bookId,
-      applicationId: data?.applicationId,
-      relatedUserId: data?.relatedUserId,
-      isRead: false,
-    });
+      data,
+    );
 
     const savedNotification =
       await this.notificationRepository.save(notification);
 
-    try {
-      const tokens = await this.deviceTokenService.getActiveTokens(userId);
-      this.logger.log(
-        `Found ${tokens.length} active device token(s) for user ${userId}`,
-      );
-
-      if (tokens.length > 0) {
-        const result =
-          await this.firebaseNotificationService.sendNotificationToMultiple(
-            tokens,
-            {
-              title,
-              body,
-              data: {
-                notificationId: savedNotification.id,
-                type,
-                ...data,
-              },
-            },
-          );
-        this.logger.log(
-          `Push notification sent: ${result.success} successful, ${result.failure} failed`,
-        );
-      } else {
-        this.logger.warn(
-          `No active device tokens found for user ${userId}, notification saved but not sent as push`,
-        );
-      }
-    } catch (error) {
-      this.logger.error(
-        `Failed to send push notification: ${error}`,
-        error?.stack,
-      );
-    }
+    await this.sendPushNotification(
+      userId,
+      savedNotification,
+      type,
+      title,
+      body,
+      data,
+    );
 
     return savedNotification;
   }
 
   async getUserNotifications(
     userId: string,
-    dto: { skip?: number; take?: number; unreadOnly?: boolean },
+    dto: Pick<FindNotificationsDto, 'skip' | 'take' | 'unreadOnly'>,
   ) {
     const skip = dto.skip ?? 0;
     const take = dto.take ?? 20;
@@ -308,5 +272,106 @@ export class NotificationService {
       `${authorName} published a new book: "${bookTitle}"`,
       { bookId, authorId, relatedUserId: authorId },
     );
+  }
+
+  private async isNotificationEnabledForUser(
+    userId: string,
+    type: NotificationTypeEnum,
+  ): Promise<boolean> {
+    const profile = await this.userProfileService.getProfile(userId);
+
+    if (!profile.notificationsEnabled) {
+      this.logger.log(`Notifications disabled for user ${userId}, skipping`);
+      return false;
+    }
+
+    const preferences: NotificationTypeEnum[] =
+      profile.notificationPreferences || [];
+
+    if (preferences.length > 0 && !preferences.includes(type)) {
+      this.logger.log(
+        `Notification type ${type} disabled for user ${userId}, skipping`,
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  private createNotificationEntity(
+    userId: string,
+    type: NotificationTypeEnum,
+    title: string,
+    body: string,
+    data?: NotificationDataPayload,
+  ): Notification {
+    return this.notificationRepository.create({
+      userId,
+      type,
+      title,
+      body,
+      data: data ?? {},
+      bookId: data?.bookId,
+      applicationId: data?.applicationId,
+      relatedUserId: data?.relatedUserId,
+      isRead: false,
+    });
+  }
+
+  private async sendPushNotification(
+    userId: string,
+    notification: Notification,
+    type: NotificationTypeEnum,
+    title: string,
+    body: string,
+    data?: NotificationDataPayload,
+  ): Promise<void> {
+    try {
+      const tokens = await this.deviceTokenService.getActiveTokens(userId);
+      this.logger.log(
+        `Found ${tokens.length} active device token(s) for user ${userId}`,
+      );
+
+      if (tokens.length === 0) {
+        this.logger.warn(
+          `No active device tokens found for user ${userId}, notification saved but not sent as push`,
+        );
+        return;
+      }
+
+      const result =
+        await this.firebaseNotificationService.sendNotificationToMultiple(
+          tokens,
+          {
+            title,
+            body,
+            data: {
+              notificationId: notification.id,
+              type,
+              ...data,
+            },
+          },
+        );
+
+      this.logger.log(
+        `Push notification sent: ${result.success} successful, ${result.failure} failed`,
+      );
+    } catch (error) {
+      this.logPushNotificationError(error);
+    }
+  }
+
+  private logPushNotificationError(error: unknown): void {
+    const message =
+      error && typeof error === 'object' && 'message' in error
+        ? String((error as { message?: unknown }).message)
+        : String(error);
+
+    const stack =
+      error && typeof error === 'object' && 'stack' in error
+        ? String((error as { stack?: unknown }).stack)
+        : undefined;
+
+    this.logger.error(`Failed to send push notification: ${message}`, stack);
   }
 }

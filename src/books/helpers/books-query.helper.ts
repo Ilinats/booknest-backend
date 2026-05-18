@@ -364,10 +364,13 @@ export class BooksQueryHelper {
   ) {
     const btw = expression.match(/^\$btw:(.+),(.+)$/);
     if (btw) {
-      qb.andWhere('book.applicationDeadline BETWEEN :deadlineFrom AND :deadlineTo', {
-        deadlineFrom: new Date(btw[1]),
-        deadlineTo: new Date(btw[2]),
-      });
+      qb.andWhere(
+        'book.applicationDeadline BETWEEN :deadlineFrom AND :deadlineTo',
+        {
+          deadlineFrom: new Date(btw[1]),
+          deadlineTo: new Date(btw[2]),
+        },
+      );
       return;
     }
     if (expression.startsWith('$gt:')) {

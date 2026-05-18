@@ -67,7 +67,8 @@ export class BrowseBooksDto {
   'filter.averageRating'?: string;
 
   @ApiPropertyOptional({
-    description: 'Accepting applications: copies > 0 and deadline in the future',
+    description:
+      'Accepting applications: copies > 0 and deadline in the future',
     example: '$gt:0',
   })
   @IsOptional()

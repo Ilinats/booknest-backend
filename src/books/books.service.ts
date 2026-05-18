@@ -9,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Book } from './entity/book.entity';
 import { Series } from '../series/entity/series.entity';
-import { CreateBookDto, UpdateBookDto } from './dto';
+import { BrowseBooksDto, CreateBookDto, UpdateBookDto } from './dto';
 import { Application } from '../applications/entity/application.entity';
 import { Review } from '../reviews/entity/review.entity';
 import { FilesService } from '../files/files.service';
@@ -268,8 +268,12 @@ export class BooksService {
     return this.findOnePublic(bookId, authorId, authorUserType);
   }
 
-  async browse(query: PaginateQuery, userId?: string, userType?: UserType) {
-    return this.booksQueryHelper.browse(query, userId, userType);
+  async browse(
+    paginateQuery: PaginateQuery,
+    userId?: string,
+    userType?: UserType,
+  ) {
+    return this.booksQueryHelper.browse(paginateQuery, userId, userType);
   }
 
   async featured(userId?: string, userType?: UserType): Promise<Book[]> {

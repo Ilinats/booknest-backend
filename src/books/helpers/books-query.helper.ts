@@ -13,14 +13,16 @@ import { BookGenre } from '../entity/book-genre.entity';
 import { Application } from '../../applications/entity/application.entity';
 import { Review } from '../../reviews/entity/review.entity';
 import { UserGenrePreference } from '../../user-genre-preferences/entity/user-genre-preference.entity';
-import {
-  BookStatus,
-  ApplicationStatusFilter,
-  DeadlineFilter,
-  BookSortBy,
-} from '../enums';
+import { BookStatus } from '../enums';
 import { UserType } from '../../users/enums';
 import { ApplicationStatus } from '../../applications/enums';
+
+const BROWSE_SEARCH_BY = [
+  'title',
+  'author.firstName',
+  'author.lastName',
+  'series.name',
+] as const;
 
 @Injectable()
 export class BooksQueryHelper {
@@ -31,17 +33,12 @@ export class BooksQueryHelper {
         'createdAt',
         'title',
         'status',
+        'applicationDeadline',
+        'availableCopies',
         'author.firstName',
         'series.name',
       ] as any[],
-      searchableColumns: [
-        'title',
-        'shortDescription',
-        'fullDescription',
-        'author.firstName',
-        'author.lastName',
-        'series.name',
-      ] as any[],
+      searchableColumns: [...BROWSE_SEARCH_BY] as any[],
       filterableColumns: {
         status: [FilterOperator.EQ, FilterOperator.IN],
         ageRating: [FilterOperator.EQ],
@@ -58,12 +55,35 @@ export class BooksQueryHelper {
         'author.firstName': [FilterOperator.ILIKE],
         'author.lastName': [FilterOperator.ILIKE],
         'series.name': [FilterOperator.ILIKE],
+        'bookGenres.genreId': [FilterOperator.EQ, FilterOperator.IN],
         availableCopies: [FilterOperator.GT],
-        applicationDeadline: [FilterOperator.GT, FilterOperator.LTE],
+        applicationDeadline: [
+          FilterOperator.GT,
+          FilterOperator.LTE,
+          FilterOperator.BTW,
+        ],
       },
       defaultSortBy: [['publishedAt', 'DESC']] as any,
       defaultLimit: 20,
       maxLimit: 100,
+    };
+  }
+
+  private getBrowsePaginateConfig() {
+    return {
+      ...this.getPaginateConfig(),
+      where: {
+        status: In([
+          BookStatus.ACTIVE,
+          BookStatus.IN_PROGRESS,
+          BookStatus.COMPLETED,
+        ]),
+      },
+      relations: {
+        author: true,
+        series: true,
+        bookGenres: { genre: true },
+      },
     };
   }
 
@@ -85,17 +105,22 @@ export class BooksQueryHelper {
     private readonly userGenrePrefRepo: Repository<UserGenrePreference>,
   ) {}
 
-  async browse(query: PaginateQuery, userId?: string, userType?: UserType) {
-    if (this.hasComplexFilters(query)) {
-      return this.browseWithComplexFilters(query, userId, userType);
+  async browse(
+    paginateQuery: PaginateQuery,
+    userId?: string,
+    userType?: UserType,
+  ) {
+    const query = this.withBrowseDefaults(paginateQuery);
+
+    if (this.needsCustomSql(query)) {
+      return this.browseWithCustomQuery(query, userId, userType);
     }
 
-    const where = this.buildSimpleWhere(query);
-    const result = await paginate(query, this.bookRepo, {
-      ...this.getPaginateConfig(),
-      where,
-      relations: this.BOOK_RELATIONS,
-    });
+    const result = await paginate(
+      query,
+      this.bookRepo,
+      this.getBrowsePaginateConfig(),
+    );
 
     return {
       ...result,
@@ -208,78 +233,67 @@ export class BooksQueryHelper {
       .leftJoinAndSelect('bookGenres.genre', 'genre');
   }
 
-  private hasComplexFilters(query: PaginateQuery): boolean {
-    const {
-      genres,
-      minAvgRating,
-      maxAvgRating,
-      sortBy,
-      applicationStatus,
-      deadlineFilter,
-    } = this.extractQueryParams(query);
-
-    return (
-      (genres?.length ?? 0) > 0 ||
-      minAvgRating !== undefined ||
-      maxAvgRating !== undefined ||
-      (sortBy !== undefined && sortBy !== BookSortBy.NEWEST) ||
-      applicationStatus !== undefined ||
-      deadlineFilter !== undefined
-    );
-  }
-
-  private buildSimpleWhere(query: PaginateQuery) {
-    const { applicationStatus } = this.extractQueryParams(query);
-    const where: any = {
-      status: In([
-        BookStatus.ACTIVE,
-        BookStatus.IN_PROGRESS,
-        BookStatus.COMPLETED,
-      ]),
+  private withBrowseDefaults(query: PaginateQuery): PaginateQuery {
+    const search = query.search?.trim();
+    return {
+      ...query,
+      sortBy: query.sortBy?.length ? query.sortBy : [['publishedAt', 'DESC']],
+      search: search || undefined,
+      searchBy: search ? [...BROWSE_SEARCH_BY] : query.searchBy,
     };
-
-    if (applicationStatus === ApplicationStatusFilter.ACCEPTING_APPLICATIONS) {
-      where.availableCopies = MoreThan(0);
-      where.applicationDeadline = MoreThan(new Date());
-    }
-
-    return where;
   }
 
-  private async browseWithComplexFilters(
+  private needsCustomSql(query: PaginateQuery): boolean {
+    const sortField = query.sortBy?.[0]?.[0]?.toLowerCase();
+    if (sortField === 'mostpopular' || sortField === 'averagerating') {
+      return true;
+    }
+    const range = this.ratingRangeFrom(query.filter?.averageRating);
+    return range != null && (range.min > 0 || range.max < 5);
+  }
+
+  private ratingRangeFrom(
+    raw: unknown,
+  ): { min: number; max: number } | undefined {
+    if (typeof raw !== 'string') {
+      return undefined;
+    }
+    const btw = raw.match(/^\$btw:([\d.]+),([\d.]+)$/);
+    if (btw) {
+      return { min: Number(btw[1]), max: Number(btw[2]) };
+    }
+    const min = raw.match(/^\$gte:([\d.]+)$/)?.[1];
+    const max = raw.match(/^\$lte:([\d.]+)$/)?.[1];
+    if (min || max) {
+      return { min: min ? Number(min) : 0, max: max ? Number(max) : 5 };
+    }
+    return undefined;
+  }
+
+  private genreIdsFromFilter(
+    filter?: PaginateQuery['filter'],
+  ): number[] | undefined {
+    const raw = filter?.['bookGenres.genreId'];
+    if (typeof raw !== 'string') {
+      return undefined;
+    }
+    const match = /^\$(eq|in):(.*)$/.exec(raw);
+    if (!match) {
+      return undefined;
+    }
+    const values = match[1] === 'eq' ? [match[2]] : match[2].split(',');
+    const ids = values
+      .map((v) => parseInt(v.trim(), 10))
+      .filter((id) => !Number.isNaN(id));
+    return ids.length > 0 ? ids : undefined;
+  }
+
+  private async browseWithCustomQuery(
     query: PaginateQuery,
     userId?: string,
     userType?: UserType,
   ) {
-    const qb = this.createQueryBuilder();
-    const { sortBy } = this.extractQueryParams(query);
-
-    this.addStatusFilter(qb);
-    this.addAdvancedFilters(qb, query);
-    this.addSorting(qb, sortBy);
-
-    const result = await paginate(query, qb, this.getPaginateConfig());
-
-    return {
-      ...result,
-      data: this.sanitizeBooks(result.data, userId, userType),
-    };
-  }
-
-  private extractQueryParams(query: PaginateQuery) {
-    return {
-      genres: query['genres'] as number[] | undefined,
-      minAvgRating: query['minAvgRating'] as number | undefined,
-      maxAvgRating: query['maxAvgRating'] as number | undefined,
-      sortBy: query['sortBy'] as BookSortBy | undefined,
-      applicationStatus: query['applicationStatus'] as
-        | ApplicationStatusFilter
-        | undefined,
-      deadlineFilter: query['deadlineFilter'] as DeadlineFilter | undefined,
-    };
-  }
-
-  private addStatusFilter(qb: SelectQueryBuilder<Book>) {
+    const qb = this.bookRepo.createQueryBuilder('book');
     qb.andWhere('book.status IN (:...statuses)', {
       statuses: [
         BookStatus.ACTIVE,
@@ -287,47 +301,85 @@ export class BooksQueryHelper {
         BookStatus.COMPLETED,
       ],
     });
+
+    this.applyBrowseFiltersToQueryBuilder(qb, query);
+
+    const range = this.ratingRangeFrom(query.filter?.averageRating);
+    if (range && (range.min > 0 || range.max < 5)) {
+      this.addRatingFilter(qb, range.min, range.max);
+    }
+
+    this.addSorting(qb, query.sortBy);
+
+    const pagination = await this.paginateBookIds(qb, query);
+    const books = await this.loadBooksByIds(pagination.ids);
+
+    return this.buildPaginatedBooksResponse(
+      books,
+      pagination,
+      userId,
+      userType,
+    );
   }
 
-  private addAdvancedFilters(
+  private applyBrowseFiltersToQueryBuilder(
     qb: SelectQueryBuilder<Book>,
     query: PaginateQuery,
   ) {
-    const {
-      genres,
-      minAvgRating,
-      maxAvgRating,
-      applicationStatus,
-      deadlineFilter,
-    } = this.extractQueryParams(query);
-
-    if (applicationStatus === ApplicationStatusFilter.ACCEPTING_APPLICATIONS) {
-      qb.andWhere('book.availableCopies > 0');
-      qb.andWhere('book.applicationDeadline > :now', { now: new Date() });
+    const genreIds = this.genreIdsFromFilter(query.filter);
+    if (genreIds?.length) {
+      this.addGenreFilter(qb, genreIds);
     }
 
-    if (deadlineFilter) {
-      const sevenDaysFromNow = new Date();
-      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-
-      if (deadlineFilter === DeadlineFilter.ENDING_SOON) {
-        qb.andWhere('book.applicationDeadline <= :sevenDaysFromNow', {
-          sevenDaysFromNow,
-        });
-        qb.andWhere('book.applicationDeadline > :now', { now: new Date() });
-      } else if (deadlineFilter === DeadlineFilter.STILL_TIME) {
-        qb.andWhere('book.applicationDeadline > :sevenDaysFromNow', {
-          sevenDaysFromNow,
-        });
-      }
+    const f = query.filter ?? {};
+    if (typeof f.ageRating === 'string' && f.ageRating.startsWith('$eq:')) {
+      qb.andWhere('book.ageRating = :ageRating', {
+        ageRating: f.ageRating.slice(4),
+      });
     }
-
-    if (genres && genres.length > 0) {
-      this.addGenreFilter(qb, genres);
+    if (
+      typeof f.distributionType === 'string' &&
+      f.distributionType.startsWith('$eq:')
+    ) {
+      qb.andWhere('book.distributionType = :distributionType', {
+        distributionType: f.distributionType.slice(4),
+      });
     }
+    if (
+      typeof f.availableCopies === 'string' &&
+      f.availableCopies.startsWith('$gt:')
+    ) {
+      qb.andWhere('book.availableCopies > :minCopies', {
+        minCopies: Number(f.availableCopies.slice(4)),
+      });
+    }
+    if (typeof f.applicationDeadline === 'string') {
+      this.applyApplicationDeadlineFilter(qb, f.applicationDeadline);
+    }
+  }
 
-    if (minAvgRating !== undefined || maxAvgRating !== undefined) {
-      this.addRatingFilter(qb, minAvgRating, maxAvgRating);
+  private applyApplicationDeadlineFilter(
+    qb: SelectQueryBuilder<Book>,
+    expression: string,
+  ) {
+    const btw = expression.match(/^\$btw:(.+),(.+)$/);
+    if (btw) {
+      qb.andWhere('book.applicationDeadline BETWEEN :deadlineFrom AND :deadlineTo', {
+        deadlineFrom: new Date(btw[1]),
+        deadlineTo: new Date(btw[2]),
+      });
+      return;
+    }
+    if (expression.startsWith('$gt:')) {
+      qb.andWhere('book.applicationDeadline > :deadlineAfter', {
+        deadlineAfter: new Date(expression.slice(4)),
+      });
+      return;
+    }
+    if (expression.startsWith('$lte:')) {
+      qb.andWhere('book.applicationDeadline <= :deadlineBefore', {
+        deadlineBefore: new Date(expression.slice(5)),
+      });
     }
   }
 
@@ -338,10 +390,6 @@ export class BooksQueryHelper {
         .select('bg.book_id')
         .from('book_genres', 'bg')
         .where('bg.genre_id IN (:...genreIds)', { genreIds: genres })
-        .groupBy('bg.book_id')
-        .having('COUNT(DISTINCT bg.genre_id) = :genreCount', {
-          genreCount: genres.length,
-        })
         .getQuery();
       return `book.id IN ${subQuery}`;
     });
@@ -352,76 +400,60 @@ export class BooksQueryHelper {
     minAvgRating?: number,
     maxAvgRating?: number,
   ) {
-    qb.leftJoin(
-      (subQb) => {
-        return subQb
-          .select('r.application_id', 'application_id')
-          .addSelect('AVG(r.rating)', 'avg_rating')
-          .from('reviews', 'r')
-          .innerJoin('applications', 'a', 'a.id = r.application_id')
-          .where('a.book_id = book.id')
-          .groupBy('r.application_id');
-      },
-      'review_avg',
-      'review_avg.application_id = application.id',
-    );
+    const avgRatingSubquery = `(
+      SELECT AVG(r.rating)
+      FROM reviews r
+      INNER JOIN applications a ON a.id = r.application_id
+      WHERE a.book_id = book.id
+    )`;
 
     if (minAvgRating !== undefined) {
-      qb.andHaving('AVG(review_avg.avg_rating) >= :minAvgRating', {
-        minAvgRating,
-      });
+      qb.andWhere(`${avgRatingSubquery} >= :minAvgRating`, { minAvgRating });
     }
     if (maxAvgRating !== undefined) {
-      qb.andHaving('AVG(review_avg.avg_rating) <= :maxAvgRating', {
-        maxAvgRating,
-      });
+      qb.andWhere(`${avgRatingSubquery} <= :maxAvgRating`, { maxAvgRating });
     }
   }
 
-  private addSorting(qb: SelectQueryBuilder<Book>, sortBy?: BookSortBy) {
-    if (!sortBy || sortBy === BookSortBy.NEWEST) {
-      qb.orderBy('book.publishedAt', 'DESC', 'NULLS LAST');
-      return;
-    }
+  private addSorting(
+    qb: SelectQueryBuilder<Book>,
+    sortBy?: PaginateQuery['sortBy'],
+  ) {
+    const field = sortBy?.[0]?.[0]?.toLowerCase() ?? 'publishedat';
+    const dir = (sortBy?.[0]?.[1]?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC') as
+      | 'ASC'
+      | 'DESC';
 
-    switch (sortBy) {
-      case BookSortBy.MOST_POPULAR:
-        qb.addSelect(
-          (subQb) =>
-            subQb
-              .select('COUNT(a.id)')
-              .from('applications', 'a')
-              .where('a.book_id = book.id')
-              .andWhere("a.status != 'withdrawn'"),
-          'application_count',
+    switch (field) {
+      case 'mostpopular':
+        qb.orderBy(
+          `(SELECT COUNT(a.id) FROM applications a WHERE a.book_id = book.id AND a.status != 'withdrawn')`,
+          'DESC',
         );
-        qb.orderBy('application_count', 'DESC');
         qb.addOrderBy('book.publishedAt', 'DESC', 'NULLS LAST');
         break;
 
-      case BookSortBy.HIGHEST_RATED:
-        qb.addSelect(
-          (subQb) =>
-            subQb
-              .select('AVG(r.rating)')
-              .from('reviews', 'r')
-              .innerJoin('applications', 'a', 'a.id = r.application_id')
-              .where('a.book_id = book.id'),
-          'avg_rating',
+      case 'averagerating':
+        qb.orderBy(
+          `(SELECT AVG(r.rating) FROM reviews r INNER JOIN applications a ON a.id = r.application_id WHERE a.book_id = book.id)`,
+          'DESC',
+          'NULLS LAST',
         );
-        qb.orderBy('avg_rating', 'DESC', 'NULLS LAST');
         qb.addOrderBy('book.publishedAt', 'DESC', 'NULLS LAST');
         break;
 
-      case BookSortBy.DEADLINE_SOONEST:
-        qb.orderBy('book.applicationDeadline', 'ASC', 'NULLS LAST');
+      case 'applicationdeadline':
+        qb.orderBy('book.applicationDeadline', dir, 'NULLS LAST');
         qb.addOrderBy('book.publishedAt', 'DESC', 'NULLS LAST');
         break;
 
-      case BookSortBy.MOST_AVAILABLE:
-        qb.orderBy('book.availableCopies', 'DESC');
+      case 'availablecopies':
+        qb.orderBy('book.availableCopies', dir);
         qb.addOrderBy('book.publishedAt', 'DESC', 'NULLS LAST');
         break;
+
+      default:
+        qb.orderBy('book.publishedAt', 'DESC', 'NULLS LAST');
     }
   }
 
@@ -474,6 +506,71 @@ export class BooksQueryHelper {
         totalItems,
         currentPage: opts.page,
         totalPages: totalItems === 0 ? 0 : Math.ceil(totalItems / opts.limit),
+      },
+      links: {},
+    };
+  }
+
+  private async paginateBookIds(
+    qb: SelectQueryBuilder<Book>,
+    query: PaginateQuery,
+  ) {
+    const page = query.page ?? 1;
+    const limit = Math.min(Math.max(1, query.limit ?? 20), 100);
+    const skip = (page - 1) * limit;
+
+    const totalItems = await qb.clone().getCount();
+    const ids = (
+      await qb
+        .clone()
+        .select('book.id', 'id')
+        .offset(skip)
+        .limit(limit)
+        .getRawMany<{ id: string }>()
+    ).map((row) => row.id);
+
+    return {
+      ids,
+      page,
+      limit,
+      totalItems,
+      totalPages: totalItems === 0 ? 0 : Math.ceil(totalItems / limit),
+    };
+  }
+
+  private async loadBooksByIds(ids: string[]): Promise<Book[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const books = await this.bookRepo.find({
+      where: { id: In(ids) },
+      relations: this.BOOK_RELATIONS,
+    });
+
+    const order = new Map(ids.map((id, index) => [id, index]));
+    books.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    return books;
+  }
+
+  private buildPaginatedBooksResponse(
+    books: Book[],
+    pagination: {
+      page: number;
+      limit: number;
+      totalItems: number;
+      totalPages: number;
+    },
+    userId?: string,
+    userType?: UserType,
+  ) {
+    return {
+      data: this.sanitizeBooks(books, userId, userType),
+      meta: {
+        itemsPerPage: pagination.limit,
+        totalItems: pagination.totalItems,
+        currentPage: pagination.page,
+        totalPages: pagination.totalPages,
       },
       links: {},
     };

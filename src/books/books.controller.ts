@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
   UsePipes,
@@ -25,7 +26,7 @@ import {
   ApiBody,
   ApiProduces,
 } from '@nestjs/swagger';
-import { Response } from 'express';
+import { Request as ExpressRequest, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { BooksService } from './books.service';

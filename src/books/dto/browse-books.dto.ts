@@ -1,165 +1,84 @@
-import {
-  IsEnum,
-  IsOptional,
-  IsString,
-  IsArray,
-  IsInt,
-  Min,
-  Max,
-  IsNumber,
-} from 'class-validator';
-import { Type, Transform } from 'class-transformer';
+import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { BasePaginationDto } from '../../common/dto';
-import {
-  BookStatus,
-  AgeRating,
-  DistributionType,
-  BookSortBy,
-  ApplicationStatusFilter,
-  DeadlineFilter,
-} from '../enums';
 
-type BasePaginationWithoutSortByAndSearch = Omit<
-  BasePaginationDto,
-  'sortBy' | 'search'
->;
-
-export class BrowseBooksDto extends (BasePaginationDto as any as new () => BasePaginationWithoutSortByAndSearch) {
-  @ApiPropertyOptional({
-    description:
-      'Filter by genres (genre IDs) - accepts single number or array of numbers',
-    type: [Number],
-    example: [1, 2],
-  })
+/**
+ * Browse books — standard nestjs-paginate query params.
+ * Most filters/sorts are applied by the library; only `filter.averageRating`
+ * and sorts `mostPopular` / `averageRating` need a custom SQL path.
+ */
+export class BrowseBooksDto {
+  @ApiPropertyOptional({ default: 1, minimum: 1 })
   @IsOptional()
-  @Transform(({ value }) => {
-    if (!value) return undefined;
-    if (Array.isArray(value)) {
-      return value
-        .map((v) => (typeof v === 'string' ? parseInt(v, 10) : v))
-        .filter((v) => !isNaN(v));
-    }
-    if (typeof value === 'string') {
-      const parsed = parseInt(value, 10);
-      return isNaN(parsed) ? undefined : [parsed];
-    }
-    if (typeof value === 'number') {
-      return [value];
-    }
-    return undefined;
-  })
-  @IsArray()
-  @IsInt({ each: true })
-  genres?: number[];
-
-  @ApiPropertyOptional({ enum: BookStatus })
-  @IsOptional()
-  @IsEnum(BookStatus)
-  status?: BookStatus;
-
-  @ApiPropertyOptional({ enum: AgeRating })
-  @IsOptional()
-  @IsEnum(AgeRating)
-  ageRating?: AgeRating;
-
-  @ApiPropertyOptional({ enum: DistributionType })
-  @IsOptional()
-  @IsEnum(DistributionType)
-  distributionType?: DistributionType;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  authorName?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  authorId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  seriesName?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  seriesId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  title?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  publishedFrom?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  publishedTo?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  createdFrom?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  createdTo?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(5)
   @Type(() => Number)
-  minAvgRating?: number;
+  @IsInt()
+  @Min(1)
+  page?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(5)
   @Type(() => Number)
-  maxAvgRating?: number;
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 
   @ApiPropertyOptional({
-    description:
-      'Search query - searches across title, description, author, series, and genres',
+    description: 'Search book title, author name, or series name',
+    example: 'enchanted',
   })
   @IsOptional()
   @IsString()
   search?: string;
 
   @ApiPropertyOptional({
-    enum: ApplicationStatusFilter,
     description:
-      'Filter by application status - accepting applications only or all books',
+      'publishedAt:DESC | applicationDeadline:ASC | availableCopies:DESC | mostPopular:DESC | averageRating:DESC',
+    example: 'publishedAt:DESC',
   })
   @IsOptional()
-  @IsEnum(ApplicationStatusFilter)
-  applicationStatus?: ApplicationStatusFilter;
+  @IsString()
+  sortBy?: string;
 
   @ApiPropertyOptional({
-    enum: DeadlineFilter,
-    description:
-      'Filter by deadline urgency - ending soon (within 7 days) or still time',
+    description: 'One or more genres ($eq:4 or $in:13,18)',
+    example: '$in:13,18',
   })
   @IsOptional()
-  @IsEnum(DeadlineFilter)
-  deadlineFilter?: DeadlineFilter;
+  @IsString()
+  'filter.bookGenres.genreId'?: string;
+
+  @ApiPropertyOptional({ example: '$eq:13+' })
+  @IsOptional()
+  @IsString()
+  'filter.ageRating'?: string;
+
+  @ApiPropertyOptional({ example: '$eq:digital' })
+  @IsOptional()
+  @IsString()
+  'filter.distributionType'?: string;
 
   @ApiPropertyOptional({
-    enum: BookSortBy,
-    description: 'Sort order for results',
+    description: 'Review rating range — triggers custom SQL',
+    example: '$btw:3,5',
   })
   @IsOptional()
-  @IsEnum(BookSortBy)
-  sortBy?: BookSortBy;
+  @IsString()
+  'filter.averageRating'?: string;
+
+  @ApiPropertyOptional({
+    description: 'Accepting applications: copies > 0 and deadline in the future',
+    example: '$gt:0',
+  })
+  @IsOptional()
+  @IsString()
+  'filter.availableCopies'?: string;
+
+  @ApiPropertyOptional({
+    description: 'Use $gt:now, $btw:from,to, or $lte:date',
+    example: '$gt:2026-05-18T00:00:00.000Z',
+  })
+  @IsOptional()
+  @IsString()
+  'filter.applicationDeadline'?: string;
 }

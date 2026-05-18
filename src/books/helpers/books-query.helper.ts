@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder, In, MoreThan } from 'typeorm';
+import {
+  Repository,
+  SelectQueryBuilder,
+  In,
+  MoreThan,
+  FindOptionsWhere,
+} from 'typeorm';
 import { PaginateQuery, paginate, FilterOperator } from 'nestjs-paginate';
 import { Book } from '../entity/book.entity';
 import { BookGenre } from '../entity/book-genre.entity';
@@ -14,6 +20,7 @@ import {
   BookSortBy,
 } from '../enums';
 import { UserType } from '../../users/enums';
+import { ApplicationStatus } from '../../applications/enums';
 
 @Injectable()
 export class BooksQueryHelper {
@@ -113,42 +120,27 @@ export class BooksQueryHelper {
     query: PaginateQuery,
     userType?: UserType,
   ) {
-    if (!userId) {
-      return this.fallbackToFeatured(query, userId, userType);
+    const page = query.page ?? 1;
+    const take = (query as PaginateQuery & { take?: number }).take;
+    const limit = Math.min(Number(query.limit ?? take ?? 20), 100);
+
+    let genreIds: number[] = [];
+    if (userId) {
+      const prefs = await this.userGenrePrefRepo.find({
+        where: { user: { id: userId } },
+        relations: ['genre'],
+        order: { createdAt: 'DESC' },
+        take: 5,
+      });
+      genreIds = prefs
+        .map((p) => p.genre?.id)
+        .filter((id): id is number => id != null);
     }
 
-    const userPreferences = await this.userGenrePrefRepo.find({
-      where: { user: { id: userId } },
-      relations: ['genre'],
-      order: { createdAt: 'DESC' },
-      take: 5,
-    });
+    let result = await this.findAcceptingBooks({ genreIds, page, limit });
 
-    if (userPreferences.length === 0) {
-      return this.fallbackToFeatured(query, userId, userType);
-    }
-
-    const genreIds = userPreferences.map((p) => p.genre.id);
-    const qb = this.createQueryBuilder()
-      .innerJoin('book.bookGenres', 'bg')
-      .where('book.status = :status', { status: BookStatus.ACTIVE })
-      .andWhere('bg.genreId IN (:...genreIds)', { genreIds })
-      .andWhere('book.availableCopies > 0')
-      .andWhere('book.applicationDeadline > :now', { now: new Date() })
-      .groupBy('book.id')
-      .addGroupBy('author.id')
-      .addGroupBy('series.id')
-      .orderBy('book.publishedAt', 'DESC');
-
-    const result = await paginate(query, qb, {
-      sortableColumns: ['publishedAt'],
-      defaultSortBy: [['publishedAt', 'DESC']],
-      defaultLimit: 20,
-      maxLimit: 100,
-    });
-
-    if (result.data.length === 0) {
-      return this.fallbackToFeatured(query, userId, userType);
+    if (result.data.length === 0 && genreIds.length > 0) {
+      result = await this.findAcceptingBooks({ page, limit });
     }
 
     return {
@@ -166,28 +158,45 @@ export class BooksQueryHelper {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const qb = this.createQueryBuilder()
-      .innerJoin('book.applications', 'application')
+    const rows = await this.applicationRepo
+      .createQueryBuilder('application')
+      .innerJoin('application.book', 'book')
+      .select('book.id', 'bookId')
+      .addSelect('COUNT(application.id)', 'applicationCount')
       .where('book.status = :status', { status: BookStatus.ACTIVE })
       .andWhere('book.availableCopies > 0')
       .andWhere('book.applicationDeadline > :now', { now: new Date() })
       .andWhere('application.appliedAt >= :sevenDaysAgo', { sevenDaysAgo })
-      .andWhere('application.status != :withdrawn', { withdrawn: 'withdrawn' })
+      .andWhere('application.status != :withdrawn', {
+        withdrawn: ApplicationStatus.WITHDRAWN,
+      })
       .groupBy('book.id')
-      .addGroupBy('author.id')
-      .addGroupBy('series.id')
-      .addSelect('COUNT(application.id)', 'applicationCount')
-      .orderBy('applicationCount', 'DESC')
-      .take(limit);
+      .orderBy('COUNT(application.id)', 'DESC')
+      .limit(limit)
+      .getRawMany<{ bookId: string; applicationCount: string }>();
 
-    const results = await qb.getRawAndEntities();
-    return results.entities.map((book, index) => ({
-      book: this.sanitizeBook(book, userId, userType),
-      applicationCount: parseInt(
-        results.raw[index]?.applicationCount || '0',
-        10,
-      ),
-    }));
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const books = await this.bookRepo.find({
+      where: { id: In(rows.map((row) => row.bookId)) },
+      relations: this.BOOK_RELATIONS,
+    });
+    const booksById = new Map(books.map((book) => [book.id, book]));
+
+    return rows
+      .map((row) => {
+        const book = booksById.get(row.bookId);
+        if (!book) {
+          return null;
+        }
+        return {
+          book: this.sanitizeBook(book, userId, userType),
+          applicationCount: parseInt(row.applicationCount, 10) || 0,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item != null);
   }
 
   private createQueryBuilder(): SelectQueryBuilder<Book> {
@@ -435,23 +444,36 @@ export class BooksQueryHelper {
     return book;
   }
 
-  private async fallbackToFeatured(
-    query: PaginateQuery,
-    userId?: string,
-    userType?: UserType,
-  ) {
-    const featured = await this.featured(userId, userType);
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const skip = (page - 1) * limit;
+  private async findAcceptingBooks(opts: {
+    genreIds?: number[];
+    page: number;
+    limit: number;
+  }) {
+    const where: FindOptionsWhere<Book> = {
+      status: BookStatus.ACTIVE,
+      availableCopies: MoreThan(0),
+      applicationDeadline: MoreThan(new Date()),
+    };
+
+    if (opts.genreIds?.length) {
+      where.bookGenres = { genreId: In(opts.genreIds) };
+    }
+
+    const [data, totalItems] = await this.bookRepo.findAndCount({
+      where,
+      relations: this.BOOK_RELATIONS,
+      order: { publishedAt: 'DESC' },
+      take: opts.limit,
+      skip: (opts.page - 1) * opts.limit,
+    });
 
     return {
-      data: featured.slice(skip, skip + limit),
+      data,
       meta: {
-        itemsPerPage: limit,
-        totalItems: featured.length,
-        currentPage: page,
-        totalPages: Math.ceil(featured.length / limit),
+        itemsPerPage: opts.limit,
+        totalItems,
+        currentPage: opts.page,
+        totalPages: totalItems === 0 ? 0 : Math.ceil(totalItems / opts.limit),
       },
       links: {},
     };

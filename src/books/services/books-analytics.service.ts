@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, In, Not, IsNull } from 'typeorm';
+import { Repository, MoreThanOrEqual, In } from 'typeorm';
 import { Book } from '../entity/book.entity';
 import { BookStatus } from '../enums';
 import { Application } from '../../applications/entity/application.entity';
@@ -20,6 +20,8 @@ import { ApplicationStatus } from '../../applications/enums';
 @Injectable()
 export class BooksAnalyticsService {
   private readonly logger = new Logger(BooksAnalyticsService.name);
+
+  private readonly approvedReaderStatuses = [ApplicationStatus.APPROVED];
 
   constructor(
     @InjectRepository(Book) private readonly bookRepo: Repository<Book>,
@@ -44,13 +46,26 @@ export class BooksAnalyticsService {
       throw new ForbiddenException(BookErrors.BOOK_CANNOT_MODIFY_OTHERS);
     }
 
-    const [totalApplicants, approvedReaders] = await Promise.all([
+    const [
+      totalApplicants,
+      approvedReaders,
+      pendingApplications,
+      reviewsSubmitted,
+      averageRating,
+    ] = await Promise.all([
       this.applicationRepo.count({
         where: { bookId },
       }),
       this.applicationRepo.count({
-        where: { bookId, status: ApplicationStatus.APPROVED },
+        where: { bookId, status: In(this.approvedReaderStatuses) },
       }),
+      this.applicationRepo.count({
+        where: { bookId, status: ApplicationStatus.PENDING },
+      }),
+      this.reviewRepo.count({
+        where: { application: { bookId } },
+      }),
+      this.getAverageRating(bookId),
     ]);
 
     const oldAvailableCopies = book.availableCopies;
@@ -67,7 +82,14 @@ export class BooksAnalyticsService {
       );
     }
 
-    return { bookId, totalApplicants, approvedReaders };
+    return {
+      bookId,
+      totalApplicants,
+      approvedReaders,
+      pendingApplications,
+      reviewsSubmitted,
+      averageRating,
+    };
   }
 
   async analytics(authorId: string, bookId: string) {
@@ -118,7 +140,7 @@ export class BooksAnalyticsService {
     ] = await Promise.all([
       this.applicationRepo.count({ where: { bookId } }),
       this.applicationRepo.count({
-        where: { bookId, status: ApplicationStatus.APPROVED },
+        where: { bookId, status: In(this.approvedReaderStatuses) },
       }),
       this.applicationRepo.count({
         where: { bookId, status: ApplicationStatus.PENDING },
@@ -339,6 +361,9 @@ export class BooksAnalyticsService {
     const [
       totalBooks,
       publishedBooks,
+      draftBooks,
+      inProgressBooks,
+      completedBooks,
       totalApplications,
       approvedApplications,
       pendingApplications,
@@ -352,6 +377,13 @@ export class BooksAnalyticsService {
     ] = await Promise.all([
       this.bookRepo.count({ where: { authorId } }),
       this.bookRepo.count({ where: { authorId, status: BookStatus.ACTIVE } }),
+      this.bookRepo.count({ where: { authorId, status: BookStatus.DRAFT } }),
+      this.bookRepo.count({
+        where: { authorId, status: BookStatus.IN_PROGRESS },
+      }),
+      this.bookRepo.count({
+        where: { authorId, status: BookStatus.COMPLETED },
+      }),
       applicationCountQuery.getCount(),
       applicationCountQuery
         .clone()
@@ -404,7 +436,9 @@ export class BooksAnalyticsService {
       overview: {
         totalBooks,
         publishedBooks,
-        draftBooks: totalBooks - publishedBooks,
+        draftBooks,
+        inProgressBooks,
+        completedBooks,
         totalApplications,
         approvedApplications,
         pendingApplications,
@@ -601,7 +635,7 @@ export class BooksAnalyticsService {
   private async getReviewSubmissionRate(bookId: string): Promise<number> {
     const [approvedCount, reviewCount] = await Promise.all([
       this.applicationRepo.count({
-        where: { bookId, status: ApplicationStatus.APPROVED },
+        where: { bookId, status: In(this.approvedReaderStatuses) },
       }),
       this.reviewRepo.count({
         where: {
@@ -619,7 +653,7 @@ export class BooksAnalyticsService {
     const [totalCount, approvedCount] = await Promise.all([
       this.applicationRepo.count({ where: { bookId } }),
       this.applicationRepo.count({
-        where: { bookId, status: ApplicationStatus.APPROVED },
+        where: { bookId, status: In(this.approvedReaderStatuses) },
       }),
     ]);
 
@@ -629,14 +663,10 @@ export class BooksAnalyticsService {
   private async getReviewCompletionRate(bookId: string): Promise<number> {
     const [approvedCount, completedCount] = await Promise.all([
       this.applicationRepo.count({
-        where: { bookId, status: ApplicationStatus.APPROVED },
+        where: { bookId, status: In(this.approvedReaderStatuses) },
       }),
-      this.applicationRepo.count({
-        where: {
-          bookId,
-          status: ApplicationStatus.APPROVED,
-          reviewSubmittedAt: Not(IsNull()),
-        },
+      this.reviewRepo.count({
+        where: { application: { bookId } },
       }),
     ]);
 

@@ -29,10 +29,11 @@ jest.mock('nestjs-paginate', () => ({
 type MockRepo = {
   createQueryBuilder: jest.Mock;
   find: jest.Mock;
+  findAndCount: jest.Mock;
 };
 
 function createMockRepo(): MockRepo & Record<string, jest.Mock> {
-  const chain = {
+  const chain: Record<string, jest.Mock> = {
     leftJoinAndSelect: jest.fn().mockReturnThis(),
     innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
@@ -42,8 +43,14 @@ function createMockRepo(): MockRepo & Record<string, jest.Mock> {
     addSelect: jest.fn().mockReturnThis(),
     addGroupBy: jest.fn().mockReturnThis(),
     groupBy: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    offset: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
+    clone: jest.fn(),
+    getCount: jest.fn().mockResolvedValue(0),
     getMany: jest.fn().mockResolvedValue([]),
+    getRawMany: jest.fn().mockResolvedValue([]),
     getRawAndEntities: jest.fn().mockResolvedValue({ entities: [], raw: [] }),
     subQuery: jest.fn().mockReturnValue({
       select: jest.fn().mockReturnThis(),
@@ -56,10 +63,12 @@ function createMockRepo(): MockRepo & Record<string, jest.Mock> {
       getQuery: jest.fn().mockReturnValue('(SELECT 1)'),
     }),
   };
+  chain.clone.mockImplementation(() => chain);
 
   return {
     createQueryBuilder: jest.fn().mockReturnValue(chain),
     find: jest.fn(),
+    findAndCount: jest.fn().mockResolvedValue([[], 0]),
     findOne: jest.fn(),
     count: jest.fn(),
     save: jest.fn(),
@@ -70,6 +79,7 @@ function createMockRepo(): MockRepo & Record<string, jest.Mock> {
 describe('BooksQueryHelper', () => {
   let helper: BooksQueryHelper;
   let bookRepo: ReturnType<typeof createMockRepo>;
+  let applicationRepo: ReturnType<typeof createMockRepo>;
   let userGenrePrefRepo: ReturnType<typeof createMockRepo>;
 
   beforeEach(async () => {
@@ -95,6 +105,7 @@ describe('BooksQueryHelper', () => {
 
     helper = module.get<BooksQueryHelper>(BooksQueryHelper);
     bookRepo = module.get(getRepositoryToken(Book));
+    applicationRepo = module.get(getRepositoryToken(Application));
     userGenrePrefRepo = module.get(getRepositoryToken(UserGenrePreference));
   });
 
@@ -208,9 +219,8 @@ describe('BooksQueryHelper', () => {
   });
 
   describe('recommendedForUser', () => {
-    it('falls back to featured when userId empty', async () => {
-      const qb = bookRepo.createQueryBuilder();
-      qb.getMany = jest.fn().mockResolvedValue([{ id: 'b1' } as Book]);
+    it('returns accepting books when userId empty', async () => {
+      bookRepo.findAndCount.mockResolvedValue([[{ id: 'b1' } as Book], 1]);
 
       const result = await helper.recommendedForUser(
         '' as string,
@@ -218,14 +228,13 @@ describe('BooksQueryHelper', () => {
         UserType.READER,
       );
 
-      expect(result.data).toBeDefined();
+      expect(result.data).toHaveLength(1);
       expect(userGenrePrefRepo.find).not.toHaveBeenCalled();
     });
 
-    it('falls back to featured when user has no genre preferences', async () => {
+    it('returns accepting books when user has no genre preferences', async () => {
       userGenrePrefRepo.find.mockResolvedValue([]);
-      const qb = bookRepo.createQueryBuilder();
-      qb.getMany = jest.fn().mockResolvedValue([{ id: 'b1' } as Book]);
+      bookRepo.findAndCount.mockResolvedValue([[{ id: 'b1' } as Book], 1]);
 
       const result = await helper.recommendedForUser(
         'user-1',
@@ -234,7 +243,7 @@ describe('BooksQueryHelper', () => {
       );
 
       expect(userGenrePrefRepo.find).toHaveBeenCalled();
-      expect(result.data).toBeDefined();
+      expect(result.data).toHaveLength(1);
     });
 
     it('returns genre-based recommendations when user has preferences', async () => {
@@ -242,66 +251,68 @@ describe('BooksQueryHelper', () => {
         { genre: { id: 1 } },
         { genre: { id: 2 } },
       ]);
-      mockPaginate.mockResolvedValue({
-        data: [{ id: 'b1', authorId: 'a1' } as Book],
-        meta: {},
-        links: {},
-      });
+      bookRepo.findAndCount.mockResolvedValue([
+        [{ id: 'b1', authorId: 'a1' } as Book],
+        1,
+      ]);
 
       const result = await helper.recommendedForUser(
         'user-1',
-        {} as PaginateQuery,
+        { limit: 10, path: '/books/recommended' } as unknown as PaginateQuery,
         UserType.READER,
       );
 
       expect(result.data).toHaveLength(1);
+      expect(bookRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 10,
+          where: expect.objectContaining({
+            bookGenres: { genreId: expect.anything() },
+          }),
+        }),
+      );
     });
 
-    it('falls back to featured when genre-based result is empty', async () => {
+    it('retries without genre filter when genre match is empty', async () => {
       userGenrePrefRepo.find.mockResolvedValue([{ genre: { id: 1 } }]);
-      mockPaginate.mockResolvedValue({
-        data: [],
-        meta: {},
-        links: {},
-      });
-      const qb = bookRepo.createQueryBuilder();
-      qb.getMany = jest.fn().mockResolvedValue([{ id: 'b1' } as Book]);
+      bookRepo.findAndCount
+        .mockResolvedValueOnce([[], 0])
+        .mockResolvedValueOnce([[{ id: 'b1' } as Book], 1]);
 
       const result = await helper.recommendedForUser(
         'user-1',
         {} as PaginateQuery,
       );
 
-      expect(result.data).toBeDefined();
+      expect(bookRepo.findAndCount).toHaveBeenCalledTimes(2);
+      expect(result.data).toHaveLength(1);
     });
   });
 
   describe('trending', () => {
     it('returns books with application counts', async () => {
-      const books = [{ id: 'b1', authorId: 'a1' } as Book];
-      const qb = bookRepo.createQueryBuilder();
-      qb.getRawAndEntities = jest.fn().mockResolvedValue({
-        entities: books,
-        raw: [{ applicationCount: '5' }],
-      });
+      const appQb = applicationRepo.createQueryBuilder();
+      appQb.getRawMany = jest
+        .fn()
+        .mockResolvedValue([{ bookId: 'b1', applicationCount: '5' }]);
+      bookRepo.find.mockResolvedValue([{ id: 'b1', authorId: 'a1' } as Book]);
 
       const result = await helper.trending({ limit: 5 });
 
-      expect(bookRepo.createQueryBuilder).toHaveBeenCalled();
-      expect(qb.innerJoin).toHaveBeenCalledWith('book.applications', 'application');
-      expect(qb.take).toHaveBeenCalledWith(5);
+      expect(applicationRepo.createQueryBuilder).toHaveBeenCalled();
+      expect(appQb.innerJoin).toHaveBeenCalledWith('application.book', 'book');
+      expect(appQb.limit).toHaveBeenCalledWith(5);
       expect(result).toHaveLength(1);
-      expect(result[0].book).toBeDefined();
       expect(result[0].applicationCount).toBe(5);
     });
 
     it('uses default limit 10 when opts not provided', async () => {
-      const qb = bookRepo.createQueryBuilder();
-      qb.getRawAndEntities = jest.fn().mockResolvedValue({ entities: [], raw: [] });
+      const appQb = applicationRepo.createQueryBuilder();
+      appQb.getRawMany = jest.fn().mockResolvedValue([]);
 
       await helper.trending(undefined, 'user-1', UserType.READER);
 
-      expect(qb.take).toHaveBeenCalledWith(10);
+      expect(appQb.limit).toHaveBeenCalledWith(10);
     });
   });
 

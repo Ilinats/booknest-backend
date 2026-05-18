@@ -81,6 +81,9 @@ export class ReviewsService {
 
     application.reviewSubmittedAt = new Date();
     application.readingStatus = ReadingStatus.REVIEWED;
+    if (!application.readingCompletedAt) {
+      application.readingCompletedAt = new Date();
+    }
     await this.applicationRepo.save(application);
 
     if (this.userActivityService) {
@@ -216,6 +219,7 @@ export class ReviewsService {
     const application = review.application;
     application.reviewSubmittedAt = null;
     application.readingStatus = ReadingStatus.FOR_REVIEW;
+    application.status = ApplicationStatus.APPROVED;
     await this.applicationRepo.save(application);
   }
 

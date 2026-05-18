@@ -542,7 +542,10 @@ export class BooksService {
   }
 
   private sanitizeBookDownloadBasename(title: string): string {
-    return title.replace(/[^\w\s.-]/g, '_').trim().slice(0, 180);
+    return title
+      .replace(/[^\w\s.-]/g, '_')
+      .trim()
+      .slice(0, 180);
   }
 
   async getBookAllReviews(

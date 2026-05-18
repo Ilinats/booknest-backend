@@ -9,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Book } from './entity/book.entity';
 import { Series } from '../series/entity/series.entity';
-import { BrowseBooksDto, CreateBookDto, UpdateBookDto } from './dto';
+import { CreateBookDto, UpdateBookDto } from './dto';
 import { Application } from '../applications/entity/application.entity';
 import { Review } from '../reviews/entity/review.entity';
 import { FilesService } from '../files/files.service';

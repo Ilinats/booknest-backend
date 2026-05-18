@@ -333,7 +333,11 @@ export class AuthService {
     } catch {
       expiresMs = ms('7d');
     }
-    if (typeof expiresMs !== 'number' || !Number.isFinite(expiresMs) || expiresMs <= 0) {
+    if (
+      typeof expiresMs !== 'number' ||
+      !Number.isFinite(expiresMs) ||
+      expiresMs <= 0
+    ) {
       expiresMs = ms('7d');
     }
     const expiresAt = new Date(Date.now() + expiresMs);

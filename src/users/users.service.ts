@@ -265,8 +265,12 @@ export class UsersService {
     const [
       totalBooks,
       publishedBooks,
+      draftBooks,
+      inProgressBooks,
+      completedBooks,
       totalApplications,
       approvedApplications,
+      pendingApplications,
       applicationsThisMonth,
       totalReviews,
       averageRating,
@@ -278,11 +282,23 @@ export class UsersService {
       this.bookRepository.count({
         where: { authorId, status: BookStatus.ACTIVE },
       }),
+      this.bookRepository.count({
+        where: { authorId, status: BookStatus.DRAFT },
+      }),
+      this.bookRepository.count({
+        where: { authorId, status: BookStatus.IN_PROGRESS },
+      }),
+      this.bookRepository.count({
+        where: { authorId, status: BookStatus.COMPLETED },
+      }),
       this.applicationRepository.count({
         where: { book: { authorId } },
       }),
       this.applicationRepository.count({
         where: { book: { authorId }, status: ApplicationStatus.APPROVED },
+      }),
+      this.applicationRepository.count({
+        where: { book: { authorId }, status: ApplicationStatus.PENDING },
       }),
       this.applicationRepository.count({
         where: {
@@ -301,7 +317,6 @@ export class UsersService {
       this.getAverageResponseTime(authorId),
     ]);
 
-    const pendingApplications = totalApplications - approvedApplications;
     const approvalRate =
       totalApplications > 0
         ? Math.round((approvedApplications / totalApplications) * 100)
@@ -310,7 +325,9 @@ export class UsersService {
     return {
       totalBooks,
       publishedBooks,
-      draftBooks: totalBooks - publishedBooks,
+      draftBooks,
+      inProgressBooks,
+      completedBooks,
       totalApplications,
       approvedApplications,
       pendingApplications,
@@ -335,6 +352,7 @@ export class UsersService {
     const [
       totalApplications,
       approvedApplications,
+      pendingApplications,
       completedReads,
       completedReadsThisMonth,
       completedReadsThisYear,
@@ -349,6 +367,9 @@ export class UsersService {
       this.applicationRepository.count({ where: { readerId } }),
       this.applicationRepository.count({
         where: { readerId, status: ApplicationStatus.APPROVED },
+      }),
+      this.applicationRepository.count({
+        where: { readerId, status: ApplicationStatus.PENDING },
       }),
       this.applicationRepository.count({
         where: { readerId, readingStatus: ReadingStatus.REVIEWED },
@@ -376,7 +397,6 @@ export class UsersService {
       this.getReviewCompletionRate(readerId),
     ]);
 
-    const pendingApplications = totalApplications - approvedApplications;
     const successRate =
       totalApplications > 0
         ? Math.round((approvedApplications / totalApplications) * 100)

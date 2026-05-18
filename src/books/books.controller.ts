@@ -89,10 +89,7 @@ export class BooksController {
     }),
   )
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async create(
-    @CurrentUser() user: JwtPayload,
-    @Body() dto: CreateBookDto,
-  ) {
+  async create(@CurrentUser() user: JwtPayload, @Body() dto: CreateBookDto) {
     return this.booksService.create(user.sub, user.userType as UserType, dto);
   }
 

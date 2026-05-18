@@ -46,8 +46,9 @@ export class ErrorResponseFilter implements ExceptionFilter {
       }
     }
 
-    const summary =
-      Array.isArray(message) ? message.join(', ') : String(message);
+    const summary = Array.isArray(message)
+      ? message.join(', ')
+      : String(message);
     const extra =
       status === HttpStatus.INTERNAL_SERVER_ERROR &&
       exception instanceof Error &&

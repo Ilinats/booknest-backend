@@ -268,8 +268,12 @@ export class BooksService {
     return this.findOnePublic(bookId, authorId, authorUserType);
   }
 
-  async browse(query: PaginateQuery, userId?: string, userType?: UserType) {
-    return this.booksQueryHelper.browse(query, userId, userType);
+  async browse(
+    paginateQuery: PaginateQuery,
+    userId?: string,
+    userType?: UserType,
+  ) {
+    return this.booksQueryHelper.browse(paginateQuery, userId, userType);
   }
 
   async featured(userId?: string, userType?: UserType): Promise<Book[]> {
@@ -542,7 +546,10 @@ export class BooksService {
   }
 
   private sanitizeBookDownloadBasename(title: string): string {
-    return title.replace(/[^\w\s.-]/g, '_').trim().slice(0, 180);
+    return title
+      .replace(/[^\w\s.-]/g, '_')
+      .trim()
+      .slice(0, 180);
   }
 
   async getBookAllReviews(

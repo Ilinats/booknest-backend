@@ -19,9 +19,10 @@ export class ApplicationSanitizationHelper {
     application: Application,
     isAuthor: boolean,
   ): boolean {
-    const isApproved = application.status === ApplicationStatus.APPROVED;
+    const hasReaderBookAccess =
+      application.status === ApplicationStatus.APPROVED;
     const isReviewed = application.readingStatus === ReadingStatus.REVIEWED;
-    return !isAuthor && !isApproved && !isReviewed;
+    return !isAuthor && !hasReaderBookAccess && !isReviewed;
   }
 
   static sanitizeApplicationBook(

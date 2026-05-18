@@ -26,7 +26,9 @@ export function verifyBookFingerprintToken(
   if (lastDot <= 0) return null;
   const body = trimmed.slice(0, lastDot);
   const sig = trimmed.slice(lastDot + 1);
-  const expected = createHmac('sha256', secret).update(body).digest('base64url');
+  const expected = createHmac('sha256', secret)
+    .update(body)
+    .digest('base64url');
   const a = Buffer.from(sig, 'utf8');
   const b = Buffer.from(expected, 'utf8');
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;

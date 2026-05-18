@@ -38,10 +38,7 @@ import { jwtExpiresIn } from './jwt-expires-in.util';
         secret:
           config.get<string>('JWT_SECRET')?.trim() || 'dev_secret_change_me',
         signOptions: {
-          expiresIn: jwtExpiresIn(
-            config.get<string>('JWT_EXPIRES_IN'),
-            '15m',
-          ),
+          expiresIn: jwtExpiresIn(config.get<string>('JWT_EXPIRES_IN'), '15m'),
         },
       }),
       inject: [ConfigService],

@@ -525,7 +525,11 @@ describe('UsersService', () => {
         userType: UserType.AUTHOR,
       } as any);
       bookRepository.count.mockResolvedValue(10);
-      applicationRepository.count.mockResolvedValue(5);
+      applicationRepository.count
+        .mockResolvedValueOnce(5) // totalApplications
+        .mockResolvedValueOnce(5) // approvedApplications
+        .mockResolvedValueOnce(0) // pendingApplications
+        .mockResolvedValueOnce(5); // applicationsThisMonth
       reviewRepository.count.mockResolvedValue(3);
 
       const chain = {
@@ -565,7 +569,13 @@ describe('UsersService', () => {
         id: 'r1',
         userType: UserType.READER,
       } as any);
-      applicationRepository.count.mockResolvedValue(4);
+      applicationRepository.count
+        .mockResolvedValueOnce(4) // totalApplications
+        .mockResolvedValueOnce(4) // approvedApplications
+        .mockResolvedValueOnce(0) // pendingApplications
+        .mockResolvedValueOnce(4) // completedReads
+        .mockResolvedValueOnce(4) // completedReadsThisMonth
+        .mockResolvedValueOnce(4); // completedReadsThisYear
       reviewRepository.count.mockResolvedValue(2);
 
       const chain = {

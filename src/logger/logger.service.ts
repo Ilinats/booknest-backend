@@ -26,8 +26,7 @@ export class CustomLogger implements LoggerService {
   }
 
   error(message: string, trace?: string) {
-    const line =
-      trace && trace.length > 0 ? `${message}\n${trace}` : message;
+    const line = trace && trace.length > 0 ? `${message}\n${trace}` : message;
     this.logger.error(line);
   }
 

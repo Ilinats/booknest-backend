@@ -11,8 +11,9 @@ Readers apply for books, track reading progress, and submit reviews. Authors man
 | Runtime | Node.js 22 |
 | Framework | NestJS 11 |
 | Database | PostgreSQL 16 |
+| Cache / sessions | Redis 7 (refresh token store) |
 | ORM | TypeORM (migrations only — `synchronize: false`) |
-| Auth | JWT access + refresh tokens, Argon2 passwords |
+| Auth | JWT access + refresh tokens (Redis), Argon2 passwords |
 | Files | AWS S3 (uploads & downloads) |
 | Email | Nodemailer (SMTP / Gmail) |
 | Push | Firebase Admin (optional) |
@@ -21,7 +22,7 @@ Readers apply for books, track reading progress, and submit reviews. Authors man
 
 ## Features (by module)
 
-- **Auth** — register, login, refresh, email verification, password reset
+- **Auth** — register, login, refresh, logout / logout-all, email verification, password reset
 - **Users / profiles / addresses** — reader & author profiles, shipping addresses
 - **Books & series** — CRUD, browse filters, digital/physical distribution, file upload
 - **Applications** — apply, approve/reject, bulk actions, first-come auto-approve, manual lottery draw
@@ -37,6 +38,7 @@ Readers apply for books, track reading progress, and submit reviews. Authors man
 
 - Node.js **22** and npm **11**
 - PostgreSQL **16** (local or Docker)
+- Redis **7** (local or Docker — required for refresh tokens)
 - AWS S3 bucket (for book files & images) — optional for limited local dev
 - SMTP or Gmail app password (for verification emails) — optional in dev
 
@@ -71,6 +73,11 @@ JWT_SECRET=change-me-in-production
 JWT_EXPIRES_IN=15m
 JWT_REFRESH_SECRET=change-me-refresh-in-production
 JWT_REFRESH_EXPIRES_IN=7d
+
+# Redis (required — refresh tokens)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
 
 # AWS S3 (required for file upload/download)
 AWS_REGION=us-east-1
@@ -132,13 +139,17 @@ npm run start:dev
 
 ### Full stack with Docker
 
-Build and run API + Postgres:
+Build and run API + Postgres + Redis:
 
 ```bash
 docker compose up --build
 ```
 
 Ensure `.env` supplies `JWT_SECRET`, `JWT_REFRESH_SECRET`, and AWS credentials for the `app` service (see `docker-compose.yml`).
+
+The `Dockerfile` uses a **multi-stage build**: dev dependencies and TypeScript sources stay in the build stage; the runtime image only contains compiled `dist/` and production `node_modules`. Rebuild after dependency changes with `docker compose build --no-cache app`.
+
+**Image size:** a single-stage image that runs `npm install` (all deps) and keeps source in the final layer is often ~1.3GB+. The multi-stage image is typically **~800MB** — still large because of heavy runtime deps (`firebase-admin`, `googleapis`, AWS SDK, `pdf-lib`). Removing unused packages (e.g. `googleapis` if you are not calling Google APIs) can shave off another ~180MB.
 
 ## Scripts
 

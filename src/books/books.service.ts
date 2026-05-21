@@ -16,14 +16,11 @@ import { FilesService } from '../files/files.service';
 import { SelectionMethod, BookStatus, DistributionType } from './enums';
 import { PaginateQuery, paginate, FilterOperator } from 'nestjs-paginate';
 import { BookErrors } from './errors/book-errors';
-import { ensureAuthor } from '../common/utils/auth.util';
 import { UserType } from '../users/enums';
 import { BooksAnalyticsService } from './services/books-analytics.service';
 import { BooksFileService } from './services/books-file.service';
 import { ApplicationStatus } from '../applications/enums';
 import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
-import { BookPdfFingerprintService } from './services/book-pdf-fingerprint.service';
-import { BookEpubFingerprintService } from './services/book-epub-fingerprint.service';
 
 @Injectable()
 export class BooksService {
@@ -38,8 +35,6 @@ export class BooksService {
     private readonly booksFileService: BooksFileService,
     private readonly booksQueryHelper: BooksQueryHelper,
     private readonly booksUpdateHelper: BooksUpdateHelper,
-    private readonly bookPdfFingerprintService: BookPdfFingerprintService,
-    private readonly bookEpubFingerprintService: BookEpubFingerprintService,
   ) {}
 
   async create(
@@ -51,7 +46,7 @@ export class BooksService {
     this.validateCopies(dto.totalCopies ?? 1, dto.availableCopies);
     this.validateDeadlines(dto.applicationDeadline, dto.reviewDeadline);
 
-    const book = this.bookRepo.create({
+    const saved = await this.bookRepo.save({
       authorId,
       title: dto.title,
       shortDescription: dto.shortDescription ?? null,
@@ -72,8 +67,6 @@ export class BooksService {
       seriesId: dto.seriesId ?? null,
       seriesOrder: dto.seriesOrder ?? null,
     });
-
-    const saved = await this.bookRepo.save(book);
 
     if (dto.genres?.length) {
       await this.booksUpdateHelper.updateGenres(saved.id, dto.genres);
@@ -194,9 +187,7 @@ export class BooksService {
     bookId: string,
     dto: UpdateBookDto & Partial<CreateBookDto>,
   ): Promise<Book> {
-    ensureAuthor(authorUserType);
     const book = await this.findBookOrThrow(bookId);
-    this.ensureOwnership(book, authorId);
     await this.ensureSeriesOwnershipIfProvided(authorId, dto.seriesId);
 
     await this.booksUpdateHelper.updateBookFields(book, dto);
@@ -221,20 +212,12 @@ export class BooksService {
     return book;
   }
 
-  private ensureOwnership(book: Book, authorId: string) {
-    if (book.authorId !== authorId) {
-      throw new ForbiddenException(BookErrors.BOOK_CANNOT_MODIFY_OTHERS);
-    }
-  }
-
   async remove(
     authorId: string,
     authorUserType: UserType | undefined,
     bookId: string,
   ) {
-    ensureAuthor(authorUserType);
     const book = await this.findBookOrThrow(bookId);
-    this.ensureOwnership(book, authorId);
 
     const deletePromises: Promise<void>[] = [];
 
@@ -258,9 +241,7 @@ export class BooksService {
     authorUserType: UserType | undefined,
     bookId: string,
   ) {
-    ensureAuthor(authorUserType);
     const book = await this.findBookOrThrow(bookId);
-    this.ensureOwnership(book, authorId);
     book.status = BookStatus.ACTIVE;
     book.publishedAt = new Date();
     await this.bookRepo.save(book);
@@ -296,12 +277,12 @@ export class BooksService {
     return this.booksQueryHelper.trending(opts, userId, userType);
   }
 
-  async stats(authorId: string, bookId: string) {
-    return this.booksAnalyticsService.stats(authorId, bookId);
+  async stats(bookId: string) {
+    return this.booksAnalyticsService.stats(bookId);
   }
 
-  async analytics(authorId: string, bookId: string) {
-    return this.booksAnalyticsService.analytics(authorId, bookId);
+  async analytics(bookId: string) {
+    return this.booksAnalyticsService.getBookAnalytics(bookId);
   }
 
   async getAuthorAnalytics(authorId: string, dateRange?: string) {
@@ -384,61 +365,11 @@ export class BooksService {
     );
   }
 
-  async findOneForAuthor(authorId: string, bookId: string): Promise<Book> {
-    const book = await this.bookRepo.findOne({
-      where: { id: bookId, authorId },
-    });
-
-    if (!book) {
-      throw new NotFoundException(BookErrors.BOOK_NOT_OWNED_BY_AUTHOR);
-    }
-
-    return book;
-  }
-
-  async decodeLeakFingerprintFromUpload(
-    authorId: string,
+  decodeLeakFingerprintFromUpload(
     bookId: string,
     file: Express.Multer.File | undefined,
-  ): Promise<{
-    readerId: string;
-    bookId: string;
-    issuedAt: number;
-    format: 'pdf' | 'epub';
-  }> {
-    if (!file?.buffer) {
-      throw new BadRequestException(BookErrors.BOOK_FILE_NOT_AVAILABLE);
-    }
-    await this.findOneForAuthor(authorId, bookId);
-    const fromPdf = await this.bookPdfFingerprintService.extractFingerprint(
-      file.buffer,
-    );
-    if (fromPdf) {
-      if (fromPdf.bookId !== bookId) {
-        throw new BadRequestException(BookErrors.BOOK_FINGERPRINT_WRONG_BOOK);
-      }
-      return {
-        readerId: fromPdf.readerId,
-        bookId: fromPdf.bookId,
-        issuedAt: fromPdf.iat,
-        format: 'pdf' as const,
-      };
-    }
-    const fromEpub = await this.bookEpubFingerprintService.extractFingerprint(
-      file.buffer,
-    );
-    if (fromEpub) {
-      if (fromEpub.bookId !== bookId) {
-        throw new BadRequestException(BookErrors.BOOK_FINGERPRINT_WRONG_BOOK);
-      }
-      return {
-        readerId: fromEpub.readerId,
-        bookId: fromEpub.bookId,
-        issuedAt: fromEpub.iat,
-        format: 'epub' as const,
-      };
-    }
-    throw new NotFoundException(BookErrors.BOOK_FINGERPRINT_NOT_FOUND);
+  ) {
+    return this.booksFileService.decodeLeakFingerprintFromUpload(bookId, file);
   }
 
   async checkUserApplicationStatus(
@@ -465,109 +396,18 @@ export class BooksService {
     bookId: string,
   ): Promise<void> {
     const book = await this.findOnePublic(bookId, userId, userType);
-
-    if (!book.fileUrl) {
-      throw new BadRequestException(BookErrors.BOOK_FILE_NOT_AVAILABLE);
-    }
-
-    const fileKey =
-      this.filesService.extractFileKeyFromUrl(book.fileUrl) ||
-      book.fileUrl.split('/').slice(-2).join('/');
-
-    if (
-      this.bookPdfFingerprintService.isPdfBook(
-        book.fileType ?? undefined,
-        fileKey,
-      )
-    ) {
-      try {
-        const raw = await this.filesService.getObjectBuffer(fileKey);
-        const marked = await this.bookPdfFingerprintService.embedFingerprint(
-          raw,
-          {
-            bookId,
-            readerId: userId,
-          },
-        );
-        const baseName = this.sanitizeBookDownloadBasename(book.title);
-        const filename = `${baseName || 'book'}.pdf`;
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${filename.replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        );
-        res.setHeader('Content-Length', String(marked.length));
-        res.send(marked);
-        return;
-      } catch {
-        throw new BadRequestException(BookErrors.BOOK_PDF_WATERMARK_FAILED);
-      }
-    }
-
-    if (
-      this.bookEpubFingerprintService.isEpubBook(
-        book.fileType ?? undefined,
-        fileKey,
-      )
-    ) {
-      try {
-        const raw = await this.filesService.getObjectBuffer(fileKey);
-        const marked = await this.bookEpubFingerprintService.embedFingerprint(
-          raw,
-          {
-            bookId,
-            readerId: userId,
-          },
-        );
-        const baseName = this.sanitizeBookDownloadBasename(book.title);
-        const filename = `${baseName || 'book'}.epub`;
-        res.setHeader('Content-Type', 'application/epub+zip');
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${filename.replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-        );
-        res.setHeader('Content-Length', String(marked.length));
-        res.send(marked);
-        return;
-      } catch (err) {
-        if (err instanceof BadRequestException) throw err;
-        throw new BadRequestException(BookErrors.BOOK_EPUB_FINGERPRINT_FAILED);
-      }
-    }
-
-    const downloadUrl = await this.filesService.getFileDownloadUrl(fileKey);
-    res.json({
-      downloadUrl,
-      expiresIn: 3600,
-      fileName: book.title,
-      fileSize: book.fileSize,
-      fileType: book.fileType,
-    });
+    return this.booksFileService.sendBookDownloadToResponse(res, book, userId);
   }
 
-  private sanitizeBookDownloadBasename(title: string): string {
-    return title
-      .replace(/[^\w\s.-]/g, '_')
-      .trim()
-      .slice(0, 180);
+  getBookReviewsForAuthor(bookId: string, query: PaginateQuery) {
+    return this.listReviewsForBook(bookId, query);
   }
 
-  async getBookAllReviews(
-    userId: string,
-    userType: UserType | undefined,
-    bookId: string,
-    query: PaginateQuery,
-  ) {
-    if (userType === UserType.AUTHOR) {
-      ensureAuthor(userType);
-      await this.findOneForAuthor(userId, bookId);
-      return this.getAuthorReviews(bookId, query);
-    }
-
-    return this.getReaderReview(userId, bookId, query);
+  getMyBookReview(readerId: string, bookId: string, query: PaginateQuery) {
+    return this.listReaderReviewForBook(readerId, bookId, query);
   }
 
-  private getAuthorReviews(bookId: string, query: PaginateQuery) {
+  private listReviewsForBook(bookId: string, query: PaginateQuery) {
     const qb = this.reviewRepo
       .createQueryBuilder('review')
       .leftJoinAndSelect('review.application', 'application')
@@ -583,7 +423,7 @@ export class BooksService {
     });
   }
 
-  private async getReaderReview(
+  private async listReaderReviewForBook(
     userId: string,
     bookId: string,
     query: PaginateQuery,

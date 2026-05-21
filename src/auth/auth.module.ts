@@ -10,12 +10,8 @@ import { RefreshToken } from './entity/refresh-token.entity';
 import { UserAddressModule } from '../user-address/user-address.module';
 import { VerificationCode } from './entity/verification-code.entity';
 import { VerificationCodeService } from './services/verification-code.service';
-import { Book } from '../books/entity';
-import { Application } from '../applications/entity/application.entity';
-import { Review } from '../reviews/entity/review.entity';
 import { FilesModule } from '../files/files.module';
 import { MailModule } from '../mail/mail.module';
-import { ApprovedBookApplicationGuard } from './guards/approved-book-application.guard';
 import { jwtExpiresIn } from './jwt-expires-in.util';
 
 @Module({
@@ -24,14 +20,7 @@ import { jwtExpiresIn } from './jwt-expires-in.util';
     UserAddressModule,
     FilesModule,
     MailModule,
-    TypeOrmModule.forFeature([
-      User,
-      RefreshToken,
-      VerificationCode,
-      Book,
-      Application,
-      Review,
-    ]),
+    TypeOrmModule.forFeature([User, RefreshToken, VerificationCode]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService): JwtModuleOptions => ({
@@ -45,12 +34,7 @@ import { jwtExpiresIn } from './jwt-expires-in.util';
     }),
   ],
   controllers: [AuthController],
-  providers: [
-    AuthService,
-    UsersService,
-    VerificationCodeService,
-    ApprovedBookApplicationGuard,
-  ],
-  exports: [JwtModule, ApprovedBookApplicationGuard],
+  providers: [AuthService, UsersService, VerificationCodeService],
+  exports: [JwtModule],
 })
 export class AuthModule {}

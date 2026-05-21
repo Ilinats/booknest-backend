@@ -4,7 +4,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { User } from '../users/entity';
-import { UsersService } from '../users/users.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RefreshToken } from './entity/refresh-token.entity';
 import { UserAddressModule } from '../user-address/user-address.module';
@@ -34,7 +33,7 @@ import { jwtExpiresIn } from './jwt-expires-in.util';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, UsersService, VerificationCodeService],
+  providers: [AuthService, VerificationCodeService],
   exports: [JwtModule],
 })
 export class AuthModule {}

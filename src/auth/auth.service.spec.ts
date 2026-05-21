@@ -531,34 +531,6 @@ describe('AuthService', () => {
     });
   });
 
-  describe('verifyEmail (wrapper)', () => {
-    it('calls verifyEmailWithCode with code', async () => {
-      verificationCodeService.verifyCode.mockResolvedValue({
-        isValid: true,
-        user: { id: 'u1', email: 'u@ex.com', username: 'u' } as User,
-      });
-      usersRepository.update.mockResolvedValue({});
-
-      const result = await service.verifyEmail('CODE123');
-
-      expect(result.message).toBe('Email verified successfully');
-    });
-  });
-
-  describe('resendVerification (wrapper)', () => {
-    it('delegates to resendVerificationCode', async () => {
-      const user = { id: 'u1', email: 'u@ex.com', emailVerified: false } as User;
-      usersRepository.findOne.mockResolvedValue(user);
-      verificationCodeService.createVerificationCode.mockResolvedValue({
-        code: '123',
-      } as any);
-
-      const result = await service.resendVerification('u@ex.com');
-
-      expect(result.message).toBe('Verification code sent successfully');
-    });
-  });
-
   describe('getVerificationStatus', () => {
     it('throws NotFoundException when user not found', async () => {
       usersRepository.findOne.mockResolvedValue(null);

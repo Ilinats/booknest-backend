@@ -27,6 +27,7 @@ import { AuthModule } from '../auth/auth.module';
 import { FilesModule } from '../files/files.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { BookAuthorGuard, ApprovedBookApplicationGuard } from './guards';
+import { AnalyticsCacheService } from '../common/cache/analytics-cache.service';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { BookAuthorGuard, ApprovedBookApplicationGuard } from './guards';
     BooksUpdateHelper,
     BooksAnalyticsBookQueriesHelper,
     BooksAnalyticsAuthorQueriesHelper,
+    AnalyticsCacheService,
     BooksAnalyticsService,
     BooksFileService,
     BookPdfFingerprintService,

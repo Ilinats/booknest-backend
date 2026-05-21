@@ -77,9 +77,7 @@ export class VerificationCodeService {
   }
 
   async sendVerificationEmail(user: User, code: string): Promise<void> {
-    const webBaseUrl =
-      this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
-    const smtpConfig = this.getSmtpConfig();
+    const { smtpConfig, webBaseUrl } = this.getMailContext();
     const verifyUrl = `${webBaseUrl}/verify-email?code=${code}`;
 
     await this.mailService.sendVerificationEmail(
@@ -91,9 +89,7 @@ export class VerificationCodeService {
   }
 
   async sendPasswordResetEmail(user: User, code: string): Promise<void> {
-    const webBaseUrl =
-      this.configService.get<string>('APP_URL') ?? 'http://localhost:3000';
-    const smtpConfig = this.getSmtpConfig();
+    const { smtpConfig, webBaseUrl } = this.getMailContext();
     const resetUrl = `${webBaseUrl}/reset-password?code=${code}`;
 
     await this.mailService.sendPasswordResetEmail(
@@ -102,6 +98,14 @@ export class VerificationCodeService {
       resetUrl,
       code,
     );
+  }
+
+  private getMailContext() {
+    return {
+      webBaseUrl:
+        this.configService.get<string>('APP_URL') ?? 'http://localhost:3000',
+      smtpConfig: this.getSmtpConfig(),
+    };
   }
 
   private getSmtpConfig() {

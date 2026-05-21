@@ -14,7 +14,7 @@ import { UserActivityModule } from '../user-activity/user-activity.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ Application, Book, User, UserAddress, Review]),
+    TypeOrmModule.forFeature([Application, Book, User, UserAddress, Review]),
     ReviewsModule,
     AuthModule,
     forwardRef(() => NotificationModule),

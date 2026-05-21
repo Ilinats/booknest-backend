@@ -6,11 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, MoreThanOrEqual } from 'typeorm';
+import { Repository, FindOptionsWhere } from 'typeorm';
 import { User } from './entity/user.entity';
 import { CreateUserDto, UpdateUserDto, UpdateProfileDto } from './dto';
-import { Book } from '../books/entity';
-import { BookStatus } from '../books/enums';
 import { Application } from '../applications/entity/application.entity';
 import { Review } from '../reviews/entity/review.entity';
 import { FilesService } from '../files/files.service';
@@ -22,22 +20,22 @@ import {
 } from './dto';
 import { sanitizeUser, sanitizeUserPublic } from '../common';
 import { UserErrors } from './errors/user-errors';
-import { ApplicationStatus } from '../applications/enums';
-import { ReadingStatus } from '../applications/enums';
 import { UserType } from './enums';
+import { BooksAnalyticsAuthorQueriesHelper } from '../books/helpers/books-analytics-author-queries.helper';
+import { UsersReaderStatsHelper } from './helpers/users-reader-stats.helper';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
-    @InjectRepository(Book)
-    private readonly bookRepository: Repository<Book>,
     @InjectRepository(Application)
     private readonly applicationRepository: Repository<Application>,
     @InjectRepository(Review)
     private readonly reviewRepository: Repository<Review>,
     private readonly filesService: FilesService,
+    private readonly authorStatsQueries: BooksAnalyticsAuthorQueriesHelper,
+    private readonly readerStatsHelper: UsersReaderStatsHelper,
   ) {}
 
   async create(createDto: CreateUserDto): Promise<User> {
@@ -133,16 +131,11 @@ export class UsersService {
   }
 
   async getProfile(userId: string): Promise<UserProfileResponseDto> {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
-    }
-
-    const stats = await this.getUserStats(userId);
-    const sanitized = sanitizeUserPublic(user);
+    const user = await this.findOneById(userId);
+    const stats = await this.getUserStatsForUser(user);
 
     return {
-      ...sanitized,
+      ...sanitizeUserPublic(user),
       stats,
     };
   }
@@ -180,16 +173,6 @@ export class UsersService {
     return sanitizeUser(updated);
   }
 
-  async updateAvatar(
-    userId: string,
-    avatarUrl: string,
-  ): Promise<UserResponseDto> {
-    const user = await this.findOneById(userId);
-    user.avatarUrl = avatarUrl;
-    const updated = await this.usersRepository.save(user);
-    return sanitizeUser(updated);
-  }
-
   async uploadAvatar(
     userId: string,
     file: Express.Multer.File,
@@ -217,11 +200,11 @@ export class UsersService {
     }
 
     const uploadResult = await this.filesService.uploadImage(file, 'avatars');
-
-    const updatedUser = await this.updateAvatar(userId, uploadResult.fileUrl);
+    user.avatarUrl = uploadResult.fileUrl;
+    const updated = await this.usersRepository.save(user);
 
     return {
-      user: updatedUser,
+      user: sanitizeUser(updated),
       avatar: {
         url: uploadResult.fileUrl,
         size: uploadResult.fileSize,
@@ -244,181 +227,8 @@ export class UsersService {
   }
 
   async getUserStats(userId: string): Promise<Record<string, unknown>> {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
-    }
-
-    if (user.userType === UserType.AUTHOR) {
-      return this.getAuthorStatsData(userId);
-    }
-
-    return this.getReaderStatsData(userId);
-  }
-
-  private async getAuthorStatsData(
-    authorId: string,
-  ): Promise<Record<string, unknown>> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    const [
-      totalBooks,
-      publishedBooks,
-      draftBooks,
-      inProgressBooks,
-      completedBooks,
-      totalApplications,
-      approvedApplications,
-      pendingApplications,
-      applicationsThisMonth,
-      totalReviews,
-      averageRating,
-      booksWithReviews,
-      totalWordCount,
-      averageResponseTime,
-    ] = await Promise.all([
-      this.bookRepository.count({ where: { authorId } }),
-      this.bookRepository.count({
-        where: { authorId, status: BookStatus.ACTIVE },
-      }),
-      this.bookRepository.count({
-        where: { authorId, status: BookStatus.DRAFT },
-      }),
-      this.bookRepository.count({
-        where: { authorId, status: BookStatus.IN_PROGRESS },
-      }),
-      this.bookRepository.count({
-        where: { authorId, status: BookStatus.COMPLETED },
-      }),
-      this.applicationRepository.count({
-        where: { book: { authorId } },
-      }),
-      this.applicationRepository.count({
-        where: { book: { authorId }, status: ApplicationStatus.APPROVED },
-      }),
-      this.applicationRepository.count({
-        where: { book: { authorId }, status: ApplicationStatus.PENDING },
-      }),
-      this.applicationRepository.count({
-        where: {
-          book: { authorId },
-          appliedAt: MoreThanOrEqual(startOfMonth),
-        },
-      }),
-      this.reviewRepository.count({
-        where: {
-          application: { book: { authorId } },
-        },
-      }),
-      this.getAuthorAverageRating(authorId),
-      this.getBooksWithReviews(authorId),
-      this.getTotalReviewWordCount(authorId),
-      this.getAverageResponseTime(authorId),
-    ]);
-
-    const approvalRate =
-      totalApplications > 0
-        ? Math.round((approvedApplications / totalApplications) * 100)
-        : 0;
-
-    return {
-      totalBooks,
-      publishedBooks,
-      draftBooks,
-      inProgressBooks,
-      completedBooks,
-      totalApplications,
-      approvedApplications,
-      pendingApplications,
-      applicationsThisMonth,
-      approvalRate,
-      averageResponseTime,
-      totalReviews,
-      averageRating,
-      booksWithReviews,
-      totalWordCount,
-      userType: UserType.AUTHOR,
-    };
-  }
-
-  private async getReaderStatsData(
-    readerId: string,
-  ): Promise<Record<string, unknown>> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-
-    const [
-      totalApplications,
-      approvedApplications,
-      pendingApplications,
-      completedReads,
-      completedReadsThisMonth,
-      completedReadsThisYear,
-      totalReviews,
-      averageRating,
-      totalWordCount,
-      pagesRead,
-      genresBreakdown,
-      averageReadingTime,
-      reviewCompletionRate,
-    ] = await Promise.all([
-      this.applicationRepository.count({ where: { readerId } }),
-      this.applicationRepository.count({
-        where: { readerId, status: ApplicationStatus.APPROVED },
-      }),
-      this.applicationRepository.count({
-        where: { readerId, status: ApplicationStatus.PENDING },
-      }),
-      this.applicationRepository.count({
-        where: { readerId, readingStatus: ReadingStatus.REVIEWED },
-      }),
-      this.applicationRepository.count({
-        where: {
-          readerId,
-          readingStatus: ReadingStatus.REVIEWED,
-          readingCompletedAt: MoreThanOrEqual(startOfMonth),
-        },
-      }),
-      this.applicationRepository.count({
-        where: {
-          readerId,
-          readingStatus: ReadingStatus.REVIEWED,
-          readingCompletedAt: MoreThanOrEqual(startOfYear),
-        },
-      }),
-      this.reviewRepository.count({ where: { application: { readerId } } }),
-      this.getReaderAverageRating(readerId),
-      this.getReaderTotalWordCount(readerId),
-      this.getReaderPagesRead(readerId),
-      this.getReaderGenresBreakdown(readerId),
-      this.getReaderAverageReadingTime(readerId),
-      this.getReviewCompletionRate(readerId),
-    ]);
-
-    const successRate =
-      totalApplications > 0
-        ? Math.round((approvedApplications / totalApplications) * 100)
-        : 0;
-
-    return {
-      totalApplications,
-      approvedApplications,
-      pendingApplications,
-      successRate,
-      completedReads,
-      completedReadsThisMonth,
-      completedReadsThisYear,
-      totalReviews,
-      averageRating,
-      totalWordCount,
-      pagesRead,
-      genresBreakdown,
-      averageReadingTime,
-      reviewCompletionRate,
-      userType: UserType.READER,
-    };
+    const user = await this.findOneById(userId);
+    return this.getUserStatsForUser(user);
   }
 
   async getAuthorStats(
@@ -429,12 +239,7 @@ export class UsersService {
     author: UserPublicResponseDto;
     stats: Record<string, unknown>;
   }> {
-    const author = await this.usersRepository.findOne({
-      where: { id: authorId },
-    });
-    if (!author) {
-      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
-    }
+    const author = await this.findOneById(authorId);
 
     if (author.userType !== UserType.AUTHOR) {
       throw new ForbiddenException(UserErrors.USER_NOT_AUTHOR);
@@ -447,54 +252,81 @@ export class UsersService {
       throw new ForbiddenException(UserErrors.USER_ACCESS_DENIED);
     }
 
-    const stats = await this.getAuthorStatsData(authorId);
-    const authorProfile = sanitizeUserPublic(author);
-
     return {
-      author: authorProfile,
-      stats,
+      author: sanitizeUserPublic(author),
+      stats: await this.getAuthorStatsData(authorId),
     };
   }
 
   async getMyStats(userId: string) {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException(UserErrors.USER_NOT_FOUND);
-    }
-
-    const stats = await this.getUserStats(userId);
-    const userProfile = sanitizeUser(user);
+    const user = await this.findOneById(userId);
+    const stats = await this.getUserStatsForUser(user);
 
     return {
-      user: userProfile,
+      user: sanitizeUser(user),
       stats,
     };
   }
 
-  private async getAuthorAverageRating(authorId: string): Promise<number> {
-    const result = await this.reviewRepository
-      .createQueryBuilder('review')
-      .leftJoin('review.application', 'application')
-      .leftJoin('application.book', 'book')
-      .select('AVG(review.rating)', 'average')
-      .where('book.authorId = :authorId', { authorId })
-      .getRawOne();
+  private getUserStatsForUser(user: User): Promise<Record<string, unknown>> {
+    if (user.userType === UserType.AUTHOR) {
+      return this.getAuthorStatsData(user.id);
+    }
 
-    return result?.average
-      ? parseFloat(parseFloat(result.average).toFixed(1))
-      : 0;
+    return this.readerStatsHelper.getStats(user.id);
   }
 
-  private async getBooksWithReviews(authorId: string): Promise<number> {
-    const result = await this.reviewRepository
-      .createQueryBuilder('review')
-      .leftJoin('review.application', 'application')
-      .leftJoin('application.book', 'book')
-      .select('COUNT(DISTINCT application.bookId)', 'count')
-      .where('book.authorId = :authorId', { authorId })
-      .getRawOne();
+  private async getAuthorStatsData(
+    authorId: string,
+  ): Promise<Record<string, unknown>> {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    return parseInt(result?.count || '0');
+    const [
+      bookCounts,
+      applicationCounts,
+      totalReviews,
+      averageRating,
+      booksWithReviews,
+      totalWordCount,
+      averageResponseTime,
+    ] = await Promise.all([
+      this.authorStatsQueries.getBookStatusCounts(authorId),
+      this.authorStatsQueries.getApplicationOverview(
+        authorId,
+        null,
+        startOfMonth,
+      ),
+      this.reviewRepository.count({
+        where: { application: { book: { authorId } } },
+      }),
+      this.authorStatsQueries.getAuthorAverageRating(authorId, null),
+      this.authorStatsQueries.getBooksWithReviews(authorId),
+      this.getTotalReviewWordCount(authorId),
+      this.authorStatsQueries.getAuthorAverageResponseTime(authorId),
+    ]);
+
+    return {
+      totalBooks: bookCounts.total,
+      publishedBooks: bookCounts.published,
+      draftBooks: bookCounts.draft,
+      inProgressBooks: bookCounts.inProgress,
+      completedBooks: bookCounts.completed,
+      totalApplications: applicationCounts.total,
+      approvedApplications: applicationCounts.approved,
+      pendingApplications: applicationCounts.pending,
+      applicationsThisMonth: applicationCounts.thisMonth,
+      approvalRate: percent(
+        applicationCounts.approved,
+        applicationCounts.total,
+      ),
+      averageResponseTime,
+      totalReviews,
+      averageRating,
+      booksWithReviews,
+      totalWordCount,
+      userType: UserType.AUTHOR,
+    };
   }
 
   private async getTotalReviewWordCount(authorId: string): Promise<number> {
@@ -507,147 +339,10 @@ export class UsersService {
       .andWhere('review.wordCount IS NOT NULL')
       .getRawOne();
 
-    return parseInt(result?.total || '0');
+    return parseInt(result?.total || '0', 10);
   }
+}
 
-  private async getReaderAverageRating(readerId: string): Promise<number> {
-    const result = await this.reviewRepository
-      .createQueryBuilder('review')
-      .leftJoin('review.application', 'application')
-      .select('AVG(review.rating)', 'average')
-      .where('application.readerId = :readerId', { readerId })
-      .getRawOne();
-
-    return result?.average
-      ? parseFloat(parseFloat(result.average).toFixed(1))
-      : 0;
-  }
-
-  private async getReaderTotalWordCount(readerId: string): Promise<number> {
-    const result = await this.reviewRepository
-      .createQueryBuilder('review')
-      .leftJoin('review.application', 'application')
-      .select('SUM(review.wordCount)', 'total')
-      .where('application.readerId = :readerId', { readerId })
-      .andWhere('review.wordCount IS NOT NULL')
-      .getRawOne();
-
-    return parseInt(result?.total || '0');
-  }
-
-  private async getReaderPagesRead(readerId: string): Promise<number> {
-    const result = await this.applicationRepository
-      .createQueryBuilder('application')
-      .leftJoin('application.book', 'book')
-      .select('SUM(book.pageCount)', 'total')
-      .where('application.readerId = :readerId', { readerId })
-      .andWhere('application.readingStatus = :status', {
-        status: ReadingStatus.REVIEWED,
-      })
-      .andWhere('book.pageCount IS NOT NULL')
-      .getRawOne();
-
-    return parseInt(result?.total || '0');
-  }
-
-  private async getReaderGenresBreakdown(
-    readerId: string,
-  ): Promise<Array<{ genreId: number; genreName: string; count: number }>> {
-    const result = await this.applicationRepository
-      .createQueryBuilder('application')
-      .leftJoin('application.book', 'book')
-      .leftJoin('book.bookGenres', 'bookGenre')
-      .leftJoin('bookGenre.genre', 'genre')
-      .select('genre.id', 'genreId')
-      .addSelect('genre.name', 'genreName')
-      .addSelect('COUNT(DISTINCT application.bookId)', 'count')
-      .where('application.readerId = :readerId', { readerId })
-      .andWhere('application.readingStatus = :status', {
-        status: ReadingStatus.REVIEWED,
-      })
-      .andWhere('genre.id IS NOT NULL')
-      .groupBy('genre.id')
-      .addGroupBy('genre.name')
-      .orderBy('count', 'DESC')
-      .getRawMany();
-
-    return result.map((row) => ({
-      genreId: parseInt(row.genreId),
-      genreName: row.genreName,
-      count: parseInt(row.count),
-    }));
-  }
-
-  private async getReaderAverageReadingTime(readerId: string): Promise<number> {
-    const applications = await this.applicationRepository
-      .createQueryBuilder('application')
-      .where('application.readerId = :readerId', { readerId })
-      .andWhere('application.readingStatus = :status', {
-        status: ReadingStatus.REVIEWED,
-      })
-      .andWhere('application.readingStartedAt IS NOT NULL')
-      .andWhere('application.readingCompletedAt IS NOT NULL')
-      .getMany();
-
-    if (applications.length === 0) {
-      return 0;
-    }
-
-    const totalDays = applications.reduce((sum, app) => {
-      if (app.readingStartedAt && app.readingCompletedAt) {
-        const diffTime =
-          app.readingCompletedAt.getTime() - app.readingStartedAt.getTime();
-        const diffDays = diffTime / (1000 * 60 * 60 * 24);
-        return sum + diffDays;
-      }
-      return sum;
-    }, 0);
-
-    return Math.round((totalDays / applications.length) * 10) / 10;
-  }
-
-  private async getReviewCompletionRate(readerId: string): Promise<number> {
-    const [completedReads, reviews] = await Promise.all([
-      this.applicationRepository.count({
-        where: {
-          readerId,
-          readingStatus: ReadingStatus.REVIEWED,
-        },
-      }),
-      this.reviewRepository.count({
-        where: { application: { readerId } },
-      }),
-    ]);
-
-    if (completedReads === 0) {
-      return 0;
-    }
-
-    return Math.round((reviews / completedReads) * 100);
-  }
-
-  private async getAverageResponseTime(authorId: string): Promise<number> {
-    const applications = await this.applicationRepository.find({
-      where: {
-        book: { authorId },
-        respondedAt: MoreThanOrEqual(new Date(0)),
-      },
-      select: ['appliedAt', 'respondedAt'],
-    });
-
-    if (!applications || applications.length === 0) {
-      return 0;
-    }
-
-    const totalDays = applications.reduce((sum, app) => {
-      if (app.respondedAt && app.appliedAt) {
-        const diffTime = app.respondedAt.getTime() - app.appliedAt.getTime();
-        const diffDays = diffTime / (1000 * 60 * 60 * 24);
-        return sum + diffDays;
-      }
-      return sum;
-    }, 0);
-
-    return Math.round(totalDays / applications.length);
-  }
+function percent(part: number, whole: number): number {
+  return whole > 0 ? Math.round((part / whole) * 100) : 0;
 }

@@ -25,6 +25,7 @@ import {
 import { SeriesModule } from '../series/series.module';
 import { AuthModule } from '../auth/auth.module';
 import { FilesModule } from '../files/files.module';
+import { ReviewsModule } from '../reviews/reviews.module';
 import { BookAuthorGuard, ApprovedBookApplicationGuard } from './guards';
 
 @Module({
@@ -43,6 +44,7 @@ import { BookAuthorGuard, ApprovedBookApplicationGuard } from './guards';
     SeriesModule,
     AuthModule,
     FilesModule,
+    ReviewsModule,
   ],
   providers: [
     BooksService,

@@ -20,8 +20,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ReviewsService } from './reviews.service';
-import { JwtAuthGuard, RolesGuard, OptionalJwtAuthGuard } from '../auth/guards';
-import { Roles } from '../auth/decorators';
+import { JwtAuthGuard, OptionalJwtAuthGuard } from '../auth/guards';
 import {
   CurrentUser,
   JwtPayload,
@@ -29,8 +28,6 @@ import {
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { FindReviewsDto } from './dto/find-reviews.dto';
-import { UserType } from '../users/enums';
-import { Review } from './entity/review.entity';
 
 @ApiTags('Reviews')
 @Controller('reviews')
@@ -48,39 +45,6 @@ export class ReviewsController {
     return this.reviewsService.create(readerId, dto);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserType.AUTHOR)
-  @Get('author/latest')
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Get latest reviews across all books (Author only)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Number of reviews to return (default: 3)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of latest reviews across all author books',
-    type: [Review],
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Author access required',
-  })
-  getAuthorLatestReviews(
-    @CurrentUser('sub') authorId: string,
-    @Query('limit') limit?: number,
-  ) {
-    return this.reviewsService.getAuthorLatestReviews(
-      authorId,
-      limit ? parseInt(limit.toString(), 10) : 3,
-    );
-  }
-
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':reviewId')
   @ApiOperation({
@@ -95,46 +59,6 @@ export class ReviewsController {
     @Param('reviewId', new ParseUUIDPipe()) reviewId: string,
   ) {
     return this.reviewsService.findOne(reviewId, user?.sub);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Get('my/book/:bookId')
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: "Get current user's review for a specific book (Authenticated)",
-  })
-  @ApiResponse({
-    status: 200,
-    description: "User's review for the book (null if not found)",
-    type: Review,
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  getMyReviewForBook(
-    @CurrentUser('sub') userId: string,
-    @Param('bookId', new ParseUUIDPipe()) bookId: string,
-  ) {
-    return this.reviewsService.findUserReviewForBook(bookId, userId);
-  }
-
-  @Get('books/:bookId')
-  @ApiOperation({
-    summary:
-      'Get reviews for a book (Public - optional authentication for private reviews)',
-  })
-  @ApiQuery({ type: () => FindReviewsDto })
-  @ApiResponse({ status: 200, description: 'Paginated list of reviews' })
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  getBookReviews(
-    @CurrentUser() user: JwtPayload | undefined,
-    @Param('bookId', new ParseUUIDPipe()) bookId: string,
-    @Query() dto: FindReviewsDto,
-  ) {
-    return this.reviewsService.getBookReviews(
-      bookId,
-      dto,
-      user?.sub,
-      user?.userType,
-    );
   }
 
   @Get('users/:userId')

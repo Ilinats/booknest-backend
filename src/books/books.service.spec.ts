@@ -715,52 +715,5 @@ describe('BooksService', () => {
     });
   });
 
-  describe('getBookReviewsForAuthor', () => {
-    it('returns paginated reviews for the book', async () => {
-      const qb = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-      };
-      reviewRepo.createQueryBuilder.mockReturnValue(qb);
-      const { paginate } = require('nestjs-paginate');
-      (paginate as jest.Mock).mockResolvedValue({ data: [], meta: {}, links: {} });
-
-      const result = await service.getBookReviewsForAuthor(
-        'book-1',
-        {} as PaginateQuery,
-      );
-
-      expect(reviewRepo.createQueryBuilder).toHaveBeenCalledWith('review');
-      expect(result).toEqual({ data: [], meta: {}, links: {} });
-    });
-  });
-
-  describe('getMyBookReview', () => {
-    it('returns paginated result scoped to the reader review', async () => {
-      reviewRepo.findOne.mockResolvedValue(null);
-      const qb = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-      };
-      reviewRepo.createQueryBuilder.mockReturnValue(qb);
-      const { paginate } = require('nestjs-paginate');
-      (paginate as jest.Mock).mockResolvedValue({ data: [], meta: {}, links: {} });
-
-      const result = await service.getMyBookReview(
-        'reader-1',
-        'book-1',
-        {} as PaginateQuery,
-      );
-
-      expect(reviewRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            application: { bookId: 'book-1', readerId: 'reader-1' },
-          },
-        }),
-      );
-      expect(result).toEqual({ data: [], meta: {}, links: {} });
-    });
-  });
 });
 

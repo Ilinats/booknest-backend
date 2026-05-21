@@ -26,9 +26,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { User } from '../users/entity/user.entity';
 import * as argon2 from 'argon2';
-import { RefreshToken } from './entity/refresh-token.entity';
 import { UserAddressService } from '../user-address/user-address.service';
 import { VerificationCodeService } from './services/verification-code.service';
+import { RefreshTokenStoreService } from './services/refresh-token-store.service';
 import { getRefreshJwtSecret, jwtExpiresIn } from './jwt-expires-in.util';
 import { sanitizeUser } from '../common/utils/user-sanitizer.util';
 import { UserResponseDto } from '../users/dto';
@@ -50,8 +50,7 @@ export class AuthService {
     private readonly verificationCodeService: VerificationCodeService,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
-    @InjectRepository(RefreshToken)
-    private readonly refreshTokenRepository: Repository<RefreshToken>,
+    private readonly refreshTokenStore: RefreshTokenStoreService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -91,8 +90,13 @@ export class AuthService {
 
   async logout(refreshToken: string): Promise<LogoutResponseDto> {
     const tokenHash = this.hashToken(refreshToken);
-    await this.refreshTokenRepository.delete({ tokenHash });
+    await this.refreshTokenStore.revoke(tokenHash);
     return { message: 'Logged out' };
+  }
+
+  async logoutAll(userId: string): Promise<LogoutResponseDto> {
+    await this.refreshTokenStore.revokeAllForUser(userId);
+    return { message: 'Logged out from all devices' };
   }
 
   async refresh(dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
@@ -116,11 +120,9 @@ export class AuthService {
     }
 
     const tokenHash = this.hashToken(dto.refreshToken);
-    const token = await this.refreshTokenRepository.findOne({
-      where: { tokenHash },
-    });
+    const storedUserId = await this.refreshTokenStore.getUserId(tokenHash);
 
-    if (!token || token.expiresAt.getTime() < Date.now()) {
+    if (!storedUserId || storedUserId !== payload.sub) {
       throw new UnauthorizedException(AuthErrors.INVALID_REFRESH_TOKEN);
     }
 
@@ -129,7 +131,7 @@ export class AuthService {
       throw new NotFoundException(AuthErrors.USER_NOT_FOUND);
     }
 
-    await this.refreshTokenRepository.delete({ id: token.id });
+    await this.refreshTokenStore.revoke(tokenHash);
     return this.generateTokens(user);
   }
 
@@ -280,6 +282,11 @@ export class AuthService {
     expiresIn: string,
   ): Promise<void> {
     const tokenHash = this.hashToken(refreshToken);
+    const ttlSeconds = this.parseExpiresInToSeconds(expiresIn);
+    await this.refreshTokenStore.save(userId, tokenHash, ttlSeconds);
+  }
+
+  private parseExpiresInToSeconds(expiresIn: string): number {
     const spec = expiresIn.trim();
     let expiresMs: number;
     try {
@@ -294,13 +301,7 @@ export class AuthService {
     ) {
       expiresMs = ms('7d');
     }
-    const expiresAt = new Date(Date.now() + expiresMs);
-
-    await this.refreshTokenRepository.save({
-      userId,
-      tokenHash,
-      expiresAt,
-    });
+    return Math.ceil(expiresMs / 1000);
   }
 
   private hashToken(token: string): string {

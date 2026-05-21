@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Query,
+  UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
@@ -17,6 +18,8 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CurrentUser } from './decorators/current-user.decorator';
 import {
   RegisterDto,
   LoginDto,
@@ -90,6 +93,19 @@ export class AuthController {
     @Body('refreshToken') refreshToken: string,
   ): Promise<LogoutResponseDto> {
     return this.authService.logout(refreshToken);
+  }
+
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Logout from all devices (revoke all refresh tokens)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Logged out from all devices',
+    type: LogoutResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
+  logoutAll(@CurrentUser('sub') userId: string): Promise<LogoutResponseDto> {
+    return this.authService.logoutAll(userId);
   }
 
   @Post('refresh-token')

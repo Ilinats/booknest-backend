@@ -2,8 +2,10 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere } from 'typeorm';
@@ -34,6 +36,7 @@ export class UsersService {
     @InjectRepository(Review)
     private readonly reviewRepository: Repository<Review>,
     private readonly filesService: FilesService,
+    @Inject(forwardRef(() => BooksAnalyticsAuthorQueriesHelper))
     private readonly authorStatsQueries: BooksAnalyticsAuthorQueriesHelper,
     private readonly readerStatsHelper: UsersReaderStatsHelper,
   ) {}

@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -22,6 +28,7 @@ export class NotificationService {
     private readonly notificationRepository: Repository<Notification>,
     private readonly deviceTokenService: DeviceTokenService,
     private readonly firebaseNotificationService: FirebaseNotificationService,
+    @Inject(forwardRef(() => UserProfileService))
     private readonly userProfileService: UserProfileService,
   ) {}
 

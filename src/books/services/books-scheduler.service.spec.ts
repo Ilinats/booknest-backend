@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { LessThan } from 'typeorm';
+import { IsNull, LessThan, Not } from 'typeorm';
 import { BooksSchedulerService } from './books-scheduler.service';
 import { Book } from '../entity/book.entity';
-import { BookStatus } from '../enums';
+import { BookStatus, SelectionMethod } from '../enums';
 
 type MockRepo = {
   update: jest.Mock;
@@ -42,11 +42,12 @@ describe('BooksSchedulerService', () => {
     it('should bulk-update books whose deadlines have passed', async () => {
       bookRepo.update
         .mockResolvedValueOnce({ affected: 1 })
+        .mockResolvedValueOnce({ affected: 0 })
         .mockResolvedValueOnce({ affected: 2 });
 
       await service.handlePassedDeadlines();
 
-      expect(bookRepo.update).toHaveBeenCalledTimes(2);
+      expect(bookRepo.update).toHaveBeenCalledTimes(3);
 
       const now = bookRepo.update.mock.calls[0][0].applicationDeadline
         .value as Date;
@@ -57,12 +58,24 @@ describe('BooksSchedulerService', () => {
         {
           status: BookStatus.ACTIVE,
           applicationDeadline: LessThan(now),
+          selectionMethod: Not(SelectionMethod.LOTTERY),
         },
         { status: BookStatus.IN_PROGRESS },
       );
 
       expect(bookRepo.update).toHaveBeenNthCalledWith(
         2,
+        {
+          status: BookStatus.ACTIVE,
+          applicationDeadline: LessThan(now),
+          selectionMethod: SelectionMethod.LOTTERY,
+          lotteryRunAt: Not(IsNull()),
+        },
+        { status: BookStatus.IN_PROGRESS },
+      );
+
+      expect(bookRepo.update).toHaveBeenNthCalledWith(
+        3,
         {
           status: BookStatus.IN_PROGRESS,
           reviewDeadline: LessThan(now),
@@ -74,14 +87,25 @@ describe('BooksSchedulerService', () => {
     it('should not log transitions when no books are affected', async () => {
       await service.handlePassedDeadlines();
 
-      expect(bookRepo.update).toHaveBeenCalledTimes(2);
+      expect(bookRepo.update).toHaveBeenCalledTimes(3);
       expect(bookRepo.update).toHaveBeenNthCalledWith(
         1,
-        expect.objectContaining({ status: BookStatus.ACTIVE }),
+        expect.objectContaining({
+          status: BookStatus.ACTIVE,
+          selectionMethod: Not(SelectionMethod.LOTTERY),
+        }),
         { status: BookStatus.IN_PROGRESS },
       );
       expect(bookRepo.update).toHaveBeenNthCalledWith(
         2,
+        expect.objectContaining({
+          status: BookStatus.ACTIVE,
+          selectionMethod: SelectionMethod.LOTTERY,
+        }),
+        { status: BookStatus.IN_PROGRESS },
+      );
+      expect(bookRepo.update).toHaveBeenNthCalledWith(
+        3,
         expect.objectContaining({ status: BookStatus.IN_PROGRESS }),
         { status: BookStatus.COMPLETED },
       );

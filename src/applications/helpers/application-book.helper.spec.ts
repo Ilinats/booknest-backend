@@ -3,122 +3,103 @@ import { Book } from '../../books/entity';
 import { BookStatus, DistributionType } from '../../books/enums';
 
 describe('ApplicationBookHelper', () => {
+  const createQueryBuilder = (affected: number) => ({
+    update: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    setParameters: jest.fn().mockReturnThis(),
+    execute: jest.fn().mockResolvedValue({ affected }),
+  });
+
   const mockBookRepo = {
-    decrement: jest.fn().mockResolvedValue(undefined),
     findOne: jest.fn(),
     save: jest.fn().mockResolvedValue(undefined),
+    createQueryBuilder: jest.fn(),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('decrementAvailableCopies', () => {
-    it('decrements by 1 by default and does not change status when copies remain', async () => {
+  describe('tryReserveCopies', () => {
+    it('returns false when no rows updated', async () => {
+      mockBookRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(0));
+
+      const result = await ApplicationBookHelper.tryReserveCopies(
+        mockBookRepo as any,
+        'b1',
+        1,
+      );
+
+      expect(result).toBe(false);
+      expect(mockBookRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('returns true and syncs status when a copy is reserved', async () => {
+      mockBookRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(1));
+      mockBookRepo.findOne.mockResolvedValue({
+        id: 'b1',
+        availableCopies: 0,
+        status: BookStatus.ACTIVE,
+      });
+
+      const result = await ApplicationBookHelper.tryReserveCopies(
+        mockBookRepo as any,
+        'b1',
+        1,
+      );
+
+      expect(result).toBe(true);
+      expect(mockBookRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: BookStatus.IN_PROGRESS }),
+      );
+    });
+
+    it('returns true without saving when copies remain', async () => {
+      mockBookRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(1));
       mockBookRepo.findOne.mockResolvedValue({
         id: 'b1',
         availableCopies: 2,
         status: BookStatus.ACTIVE,
       });
 
-      await ApplicationBookHelper.decrementAvailableCopies(
+      const result = await ApplicationBookHelper.tryReserveCopies(
         mockBookRepo as any,
         'b1',
+        2,
       );
 
-      expect(mockBookRepo.decrement).toHaveBeenCalledWith(
-        { id: 'b1' },
-        'availableCopies',
-        1,
-      );
+      expect(result).toBe(true);
       expect(mockBookRepo.save).not.toHaveBeenCalled();
     });
 
-    it('decrements by given count', async () => {
-      mockBookRepo.findOne.mockResolvedValue({
-        id: 'b1',
-        availableCopies: 1,
-        status: BookStatus.ACTIVE,
-      });
-
-      await ApplicationBookHelper.decrementAvailableCopies(
+    it('returns true for count <= 0 without querying', async () => {
+      const result = await ApplicationBookHelper.tryReserveCopies(
         mockBookRepo as any,
         'b1',
-        3,
+        0,
       );
 
-      expect(mockBookRepo.decrement).toHaveBeenCalledWith(
-        { id: 'b1' },
-        'availableCopies',
-        3,
-      );
-    });
-
-    it('sets status to IN_PROGRESS when availableCopies becomes 0 and was ACTIVE', async () => {
-      const updatedBook = {
-        id: 'b1',
-        availableCopies: 0,
-        status: BookStatus.ACTIVE,
-      };
-      mockBookRepo.findOne.mockResolvedValue(updatedBook);
-
-      await ApplicationBookHelper.decrementAvailableCopies(
-        mockBookRepo as any,
-        'b1',
-        1,
-      );
-
-      expect(mockBookRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: BookStatus.IN_PROGRESS,
-          availableCopies: 0,
-        }),
-      );
-    });
-
-    it('does not change status when availableCopies is 0 but status is not ACTIVE', async () => {
-      mockBookRepo.findOne.mockResolvedValue({
-        id: 'b1',
-        availableCopies: 0,
-        status: BookStatus.IN_PROGRESS,
-      });
-
-      await ApplicationBookHelper.decrementAvailableCopies(
-        mockBookRepo as any,
-        'b1',
-        1,
-      );
-
-      expect(mockBookRepo.save).not.toHaveBeenCalled();
-    });
-
-    it('does not save when findOne returns null', async () => {
-      mockBookRepo.findOne.mockResolvedValue(null);
-
-      await ApplicationBookHelper.decrementAvailableCopies(
-        mockBookRepo as any,
-        'b1',
-        1,
-      );
-
-      expect(mockBookRepo.save).not.toHaveBeenCalled();
+      expect(result).toBe(true);
+      expect(mockBookRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
   });
 
   describe('shouldSetCopySentAt', () => {
     it('returns true for digital distribution', () => {
-      const book = { distributionType: DistributionType.DIGITAL } as Book;
-      expect(ApplicationBookHelper.shouldSetCopySentAt(book)).toBe(true);
+      expect(
+        ApplicationBookHelper.shouldSetCopySentAt({
+          distributionType: DistributionType.DIGITAL,
+        } as Book),
+      ).toBe(true);
     });
 
     it('returns false for physical distribution', () => {
-      const book = { distributionType: DistributionType.PHYSICAL } as Book;
-      expect(ApplicationBookHelper.shouldSetCopySentAt(book)).toBe(false);
-    });
-
-    it('returns false for both distribution', () => {
-      const book = { distributionType: DistributionType.BOTH } as Book;
-      expect(ApplicationBookHelper.shouldSetCopySentAt(book)).toBe(false);
+      expect(
+        ApplicationBookHelper.shouldSetCopySentAt({
+          distributionType: DistributionType.PHYSICAL,
+        } as Book),
+      ).toBe(false);
     });
   });
 });

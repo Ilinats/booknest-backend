@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
   Inject,
@@ -9,7 +10,16 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, LessThan, IsNull, Not, And } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  In,
+  LessThan,
+  IsNull,
+  Not,
+  And,
+} from 'typeorm';
 import { PaginateQuery, paginate, FilterOperator } from 'nestjs-paginate';
 import { Application } from './entity/application.entity';
 import { Book } from '../books/entity';
@@ -17,7 +27,7 @@ import { User } from '../users/entity/user.entity';
 import { UserAddress } from '../user-address/entity/user-address.entity';
 import { Review } from '../reviews/entity/review.entity';
 import { ApplicationStatus, ReadingStatus } from './enums';
-import { SelectionMethod } from '../books/enums';
+import { BookStatus, SelectionMethod } from '../books/enums';
 import {
   CreateApplicationDto,
   BulkActionDto,
@@ -52,6 +62,7 @@ export class ApplicationsService {
     private readonly userAddressRepo: Repository<UserAddress>,
     @InjectRepository(Review)
     private readonly reviewRepo: Repository<Review>,
+    private readonly dataSource: DataSource,
     @Optional()
     @Inject('NotificationService')
     private readonly notificationService?: IApplicationNotificationService,
@@ -67,35 +78,51 @@ export class ApplicationsService {
     const user = await this.userRepo.findOne({ where: { id: readerId } });
     ApplicationValidationHelper.validateUserForApplication(user);
 
-    const book = await this.getBookOrThrow(dto.bookId);
-    ApplicationValidationHelper.validateBookForApplication(book);
-
     const existing = await this.applicationRepo.findOne({
       where: { readerId, bookId: dto.bookId },
     });
     ApplicationValidationHelper.validateApplicationDoesNotExist(existing);
 
-    ApplicationValidationHelper.validateUserAgeForBook(user!, book);
+    const { saved, bookTitle, status } = await this.dataSource.transaction(
+      async (manager) => {
+        const book = await manager.findOne(Book, {
+          where: { id: dto.bookId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!book) {
+          throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
+        }
 
-    const { status, respondedAt, copySentAt } =
-      await this.handleFirstComeSelection(book);
+        ApplicationValidationHelper.validateBookForApplication(book);
+        ApplicationValidationHelper.validateUserAgeForBook(user!, book);
 
-    const saved = await this.applicationRepo.save({
-      readerId,
-      bookId: dto.bookId,
-      applicationMessage: dto.applicationMessage,
-      status,
-      respondedAt,
-      copySentAt,
-    });
+        const { status, respondedAt, copySentAt } =
+          await this.resolveFirstComeStatus(manager.getRepository(Book), book);
 
-    await this.logBookAppliedActivity(readerId, book.id, saved.id);
+        const application = await manager.save(Application, {
+          readerId,
+          bookId: dto.bookId,
+          applicationMessage: dto.applicationMessage,
+          status,
+          respondedAt,
+          copySentAt,
+        });
+
+        return {
+          saved: application,
+          bookTitle: book.title,
+          status,
+        };
+      },
+    );
+
+    await this.logBookAppliedActivity(readerId, dto.bookId, saved.id);
 
     if (status === ApplicationStatus.APPROVED) {
       await ApplicationNotificationHelper.sendStatusNotification(
         this.notificationService,
         saved,
-        book.title,
+        bookTitle,
         this.logger,
       );
     }
@@ -178,10 +205,10 @@ export class ApplicationsService {
     userType: UserType | undefined,
     dto: UpdateApplicationCompleteDto,
   ): Promise<Application> {
-    const application = await this.findApplicationOrThrow(
-      { id: applicationId },
-      ['book', 'book.author'],
-    );
+    let application = await this.findApplicationOrThrow({ id: applicationId }, [
+      'book',
+      'book.author',
+    ]);
 
     const isReader = application.readerId === userId;
     const isAuthor =
@@ -198,13 +225,19 @@ export class ApplicationsService {
         throw new ForbiddenException(BookErrors.AUTHOR_ACCESS_REQUIRED);
       }
       this.validateNotLotterySelection(application.book);
-      await this.changePendingApplicationStatus(
-        application,
-        application.book,
-        dto.status,
-        userId,
-        dto.authorNotes,
-      );
+      await this.dataSource.transaction(async (manager) => {
+        await this.changePendingApplicationStatus(
+          manager,
+          application.id,
+          dto.status!,
+          userId,
+          dto.authorNotes,
+        );
+      });
+      application = await this.findApplicationOrThrow({ id: applicationId }, [
+        'book',
+        'book.author',
+      ]);
       statusChanged = true;
     }
 
@@ -283,61 +316,80 @@ export class ApplicationsService {
   ): Promise<{ updated: number }> {
     ensureAuthor(userType);
 
-    const book = await this.getBookOrThrow(bookId);
-    ApplicationValidationHelper.validateBookOwnership(book, authorId);
-    this.validateNotLotterySelection(book);
-
     if (!dto?.applicationIds?.length) {
       throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
     }
 
-    const applications = await this.findPendingApplications(
-      dto.applicationIds,
-      bookId,
-    );
-
-    if (applications.length !== dto.applicationIds.length) {
-      throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
-    }
-
-    for (const application of applications) {
-      ApplicationValidationHelper.validateApplicationStatus(
-        application,
-        ApplicationStatus.PENDING,
-        ApplicationErrors.APPLICATION_NOT_PENDING,
-      );
-      this.assignRespondedStatus(
-        application,
-        dto.action,
-        authorId,
-        dto.authorNotes,
-      );
-    }
-
-    if (dto.action === ApplicationStatus.APPROVED) {
-      await ApplicationBookHelper.decrementAvailableCopies(
-        this.bookRepo,
-        book.id,
-        applications.length,
-      );
-      if (ApplicationBookHelper.shouldSetCopySentAt(book)) {
-        const now = new Date();
-        applications.forEach((application) => {
-          application.copySentAt = now;
-        });
+    return this.dataSource.transaction(async (manager) => {
+      const book = await manager.findOne(Book, {
+        where: { id: bookId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!book) {
+        throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
       }
-    }
 
-    await this.applicationRepo.save(applications);
+      ApplicationValidationHelper.validateBookOwnership(book, authorId);
+      this.validateNotLotterySelection(book);
 
-    await ApplicationNotificationHelper.sendBulkStatusNotifications(
-      this.notificationService,
-      applications,
-      book.title,
-      this.logger,
-    );
+      const applications = await manager.find(Application, {
+        where: {
+          id: In(dto.applicationIds),
+          bookId,
+          status: ApplicationStatus.PENDING,
+        },
+      });
 
-    return { updated: applications.length };
+      if (applications.length !== dto.applicationIds.length) {
+        throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
+      }
+
+      if (dto.action === ApplicationStatus.APPROVED) {
+        const reserved = await ApplicationBookHelper.tryReserveCopies(
+          manager.getRepository(Book),
+          book.id,
+          applications.length,
+        );
+        if (!reserved) {
+          throw new ConflictException(
+            ApplicationErrors.APPLICATION_NO_AVAILABLE_COPIES,
+          );
+        }
+      }
+
+      const now = new Date();
+      const copySentAt = ApplicationBookHelper.shouldSetCopySentAt(book)
+        ? now
+        : undefined;
+
+      for (const application of applications) {
+        ApplicationValidationHelper.validateApplicationStatus(
+          application,
+          ApplicationStatus.PENDING,
+          ApplicationErrors.APPLICATION_NOT_PENDING,
+        );
+        this.assignRespondedStatus(
+          application,
+          dto.action,
+          authorId,
+          dto.authorNotes,
+        );
+        if (copySentAt) {
+          application.copySentAt = copySentAt;
+        }
+      }
+
+      await manager.save(Application, applications);
+
+      await ApplicationNotificationHelper.sendBulkStatusNotifications(
+        this.notificationService,
+        applications,
+        book.title,
+        this.logger,
+      );
+
+      return { updated: applications.length };
+    });
   }
 
   async markCopySent(
@@ -505,36 +557,70 @@ export class ApplicationsService {
     rejected: number;
     message: string;
   }> {
-    const book = await this.getBookOrThrow(bookId);
-    ApplicationValidationHelper.validateBookOwnership(book, authorId);
-    this.validateLotterySelection(book);
+    return this.dataSource.transaction(async (manager) => {
+      const book = await manager.findOne(Book, {
+        where: { id: bookId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!book) {
+        throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
+      }
 
-    const pendingApplications =
-      await this.findPendingApplicationsForLottery(bookId);
+      ApplicationValidationHelper.validateBookOwnership(book, authorId);
+      this.validateLotterySelection(book);
 
-    if (pendingApplications.length === 0) {
+      if (book.lotteryRunAt) {
+        throw new BadRequestException(
+          'Lottery has already been run for this book',
+        );
+      }
+
+      const pendingApplications = await manager.find(Application, {
+        where: {
+          bookId,
+          status: ApplicationStatus.PENDING,
+        },
+        order: { appliedAt: 'ASC' },
+      });
+
+      if (pendingApplications.length === 0) {
+        return {
+          approved: 0,
+          rejected: 0,
+          message: 'No pending applications to process',
+        };
+      }
+
+      book.lotteryRunAt = new Date();
+      await manager.save(Book, book);
+
+      const { winners, losers } = this.selectLotteryWinners(
+        pendingApplications,
+        book.availableCopies,
+      );
+
+      const bookRepo = manager.getRepository(Book);
+      const applicationRepo = manager.getRepository(Application);
+
+      await this.processLotteryWinners(
+        winners,
+        book,
+        applicationRepo,
+        bookRepo,
+      );
+      await this.processLotteryLosers(losers, book, applicationRepo);
+
+      if (book.status === BookStatus.ACTIVE) {
+        book.status = BookStatus.IN_PROGRESS;
+        await manager.save(Book, book);
+      }
+
       return {
-        approved: 0,
-        rejected: 0,
-        message: 'No pending applications to process',
+        approved: winners.length,
+        rejected: losers.length,
+        message: `Lottery completed: ${winners.length} approved, ${losers.length} rejected`,
       };
-    }
-
-    await this.validateLotteryNotAlreadyRun(bookId);
-
-    const { winners, losers } = this.selectLotteryWinners(
-      pendingApplications,
-      book.availableCopies,
-    );
-
-    await this.processLotteryWinners(winners, book);
-    await this.processLotteryLosers(losers, book);
-
-    return {
-      approved: winners.length,
-      rejected: losers.length,
-      message: `Lottery completed: ${winners.length} approved, ${losers.length} rejected`,
-    };
+    });
   }
 
   private async getBookOrThrow(bookId: string): Promise<Book> {
@@ -561,15 +647,15 @@ export class ApplicationsService {
     return application;
   }
 
-  private async handleFirstComeSelection(book: Book): Promise<{
+  private async resolveFirstComeStatus(
+    bookRepo: Repository<Book>,
+    book: Book,
+  ): Promise<{
     status: ApplicationStatus;
     respondedAt: Date | null;
     copySentAt: Date | null;
   }> {
-    if (
-      book.selectionMethod !== SelectionMethod.FIRST_COME ||
-      book.availableCopies <= 0
-    ) {
+    if (book.selectionMethod !== SelectionMethod.FIRST_COME) {
       return {
         status: ApplicationStatus.PENDING,
         respondedAt: null,
@@ -577,11 +663,19 @@ export class ApplicationsService {
       };
     }
 
-    await ApplicationBookHelper.decrementAvailableCopies(
-      this.bookRepo,
+    const reserved = await ApplicationBookHelper.tryReserveCopies(
+      bookRepo,
       book.id,
       1,
     );
+
+    if (!reserved) {
+      return {
+        status: ApplicationStatus.PENDING,
+        respondedAt: null,
+        copySentAt: null,
+      };
+    }
 
     const now = new Date();
     return {
@@ -648,31 +742,60 @@ export class ApplicationsService {
   }
 
   private async changePendingApplicationStatus(
-    application: Application,
-    book: Book,
+    manager: EntityManager,
+    applicationId: string,
     status: ApplicationStatus,
     authorId: string,
     authorNotes?: string,
   ): Promise<void> {
+    const application = await manager.findOne(Application, {
+      where: { id: applicationId },
+      lock: { mode: 'pessimistic_write' },
+      relations: ['book'],
+    });
+
+    if (!application) {
+      throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
+    }
+
+    const book = await manager.findOne(Book, {
+      where: { id: application.bookId },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!book) {
+      throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
+    }
+
     ApplicationValidationHelper.validateApplicationStatus(
       application,
       ApplicationStatus.PENDING,
       ApplicationErrors.APPLICATION_NOT_PENDING,
     );
 
-    this.assignRespondedStatus(application, status, authorId, authorNotes);
-
     if (status === ApplicationStatus.APPROVED) {
-      await ApplicationBookHelper.decrementAvailableCopies(
-        this.bookRepo,
+      const reserved = await ApplicationBookHelper.tryReserveCopies(
+        manager.getRepository(Book),
         book.id,
         1,
       );
-
-      if (ApplicationBookHelper.shouldSetCopySentAt(book)) {
-        application.copySentAt = new Date();
+      if (!reserved) {
+        throw new ConflictException(
+          ApplicationErrors.APPLICATION_NO_AVAILABLE_COPIES,
+        );
       }
     }
+
+    this.assignRespondedStatus(application, status, authorId, authorNotes);
+
+    if (
+      status === ApplicationStatus.APPROVED &&
+      ApplicationBookHelper.shouldSetCopySentAt(book)
+    ) {
+      application.copySentAt = new Date();
+    }
+
+    await manager.save(Application, application);
   }
 
   private handleReadingStatusUpdate(
@@ -810,33 +933,6 @@ export class ApplicationsService {
     }
   }
 
-  private async findPendingApplicationsForLottery(
-    bookId: string,
-  ): Promise<Application[]> {
-    return this.applicationRepo.find({
-      where: {
-        bookId,
-        status: ApplicationStatus.PENDING,
-      },
-      order: { appliedAt: 'ASC' },
-    });
-  }
-
-  private async validateLotteryNotAlreadyRun(bookId: string): Promise<void> {
-    const processedCount = await this.applicationRepo.count({
-      where: {
-        bookId,
-        status: In([ApplicationStatus.APPROVED, ApplicationStatus.REJECTED]),
-      },
-    });
-
-    if (processedCount > 0) {
-      throw new BadRequestException(
-        'Lottery has already been run for this book',
-      );
-    }
-  }
-
   private selectLotteryWinners(
     applications: Application[],
     availableCopies: number,
@@ -854,7 +950,13 @@ export class ApplicationsService {
   private async processLotteryWinners(
     winners: Application[],
     book: Book,
+    applicationRepo: Repository<Application>,
+    bookRepo: Repository<Book>,
   ): Promise<void> {
+    if (winners.length === 0) {
+      return;
+    }
+
     const now = new Date();
     const updateData: Partial<Application> = {
       status: ApplicationStatus.APPROVED,
@@ -865,15 +967,21 @@ export class ApplicationsService {
       updateData.copySentAt = now;
     }
 
-    await this.applicationRepo.update(
-      { id: In(winners.map((w) => w.id)) },
-      updateData,
-    );
-
-    await ApplicationBookHelper.decrementAvailableCopies(
-      this.bookRepo,
+    const reserved = await ApplicationBookHelper.tryReserveCopies(
+      bookRepo,
       book.id,
       winners.length,
+    );
+
+    if (!reserved) {
+      throw new ConflictException(
+        ApplicationErrors.APPLICATION_NO_AVAILABLE_COPIES,
+      );
+    }
+
+    await applicationRepo.update(
+      { id: In(winners.map((w) => w.id)) },
+      updateData,
     );
 
     await ApplicationNotificationHelper.sendBulkStatusNotifications(
@@ -892,9 +1000,14 @@ export class ApplicationsService {
   private async processLotteryLosers(
     losers: Application[],
     book: Book,
+    applicationRepo: Repository<Application>,
   ): Promise<void> {
+    if (losers.length === 0) {
+      return;
+    }
+
     const now = new Date();
-    await this.applicationRepo.update(
+    await applicationRepo.update(
       { id: In(losers.map((l) => l.id)) },
       {
         status: ApplicationStatus.REJECTED,

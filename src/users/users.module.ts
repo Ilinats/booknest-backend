@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
@@ -16,8 +16,8 @@ import { UsersReaderStatsHelper } from './helpers/users-reader-stats.helper';
     TypeOrmModule.forFeature([User, Application, Review]),
     AuthModule,
     FilesModule,
-    BooksModule,
-    ReviewsModule,
+    forwardRef(() => BooksModule),
+    forwardRef(() => ReviewsModule),
   ],
   controllers: [UsersController],
   providers: [UsersService, UsersReaderStatsHelper],

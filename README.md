@@ -79,6 +79,9 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
 
+# Analytics cache (Redis — book stats, analytics, author dashboards)
+ANALYTICS_CACHE_TTL=5m
+
 # AWS S3 (required for file upload/download)
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=

@@ -11,6 +11,7 @@ import {
   percent,
 } from '../helpers/books-analytics-book-queries.helper';
 import { BooksAnalyticsAuthorQueriesHelper } from '../helpers/books-analytics-author-queries.helper';
+import { AnalyticsCacheService } from '../../common/cache/analytics-cache.service';
 
 @Injectable()
 export class BooksAnalyticsService {
@@ -23,9 +24,16 @@ export class BooksAnalyticsService {
     @InjectRepository(Review) private readonly reviewRepo: Repository<Review>,
     private readonly bookQueries: BooksAnalyticsBookQueriesHelper,
     private readonly authorQueries: BooksAnalyticsAuthorQueriesHelper,
+    private readonly analyticsCache: AnalyticsCacheService,
   ) {}
 
   async stats(bookId: string) {
+    return this.analyticsCache.getOrSet(`book-stats:${bookId}`, () =>
+      this.loadStats(bookId),
+    );
+  }
+
+  private async loadStats(bookId: string) {
     const startOfMonth = new Date(0);
 
     const [book, applicationCounts, reviewStats] = await Promise.all([
@@ -69,6 +77,12 @@ export class BooksAnalyticsService {
   }
 
   async getBookAnalytics(bookId: string) {
+    return this.analyticsCache.getOrSet(`book:${bookId}`, () =>
+      this.loadBookAnalytics(bookId),
+    );
+  }
+
+  private async loadBookAnalytics(bookId: string) {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -170,6 +184,14 @@ export class BooksAnalyticsService {
   }
 
   async getAuthorAnalytics(authorId: string, dateRange?: string) {
+    const rangeKey = dateRange?.trim() || 'all';
+    return this.analyticsCache.getOrSet(
+      `author:${authorId}:${rangeKey}`,
+      () => this.loadAuthorAnalytics(authorId, dateRange),
+    );
+  }
+
+  private async loadAuthorAnalytics(authorId: string, dateRange?: string) {
     const { startDate } = this.authorQueries.getDateRange(dateRange);
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -262,6 +284,12 @@ export class BooksAnalyticsService {
   }
 
   async getBookPerformanceComparison(authorId: string) {
+    return this.analyticsCache.getOrSet(`performance:${authorId}`, () =>
+      this.loadBookPerformanceComparison(authorId),
+    );
+  }
+
+  private async loadBookPerformanceComparison(authorId: string) {
     const books = await this.bookRepo.find({
       where: { authorId },
       relations: ['bookGenres', 'bookGenres.genre'],

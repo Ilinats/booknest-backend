@@ -320,76 +320,83 @@ export class ApplicationsService {
       throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
     }
 
-    return this.dataSource.transaction(async (manager) => {
-      const book = await manager.findOne(Book, {
-        where: { id: bookId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!book) {
-        throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
-      }
+    const { updated, applications, bookTitle } =
+      await this.dataSource.transaction(async (manager) => {
+        const book = await manager.findOne(Book, {
+          where: { id: bookId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!book) {
+          throw new NotFoundException(BookErrors.BOOK_NOT_FOUND);
+        }
 
-      ApplicationValidationHelper.validateBookOwnership(book, authorId);
-      this.validateNotLotterySelection(book);
+        ApplicationValidationHelper.validateBookOwnership(book, authorId);
+        this.validateNotLotterySelection(book);
 
-      const applications = await manager.find(Application, {
-        where: {
-          id: In(dto.applicationIds),
-          bookId,
-          status: ApplicationStatus.PENDING,
-        },
-      });
+        const applications = await manager.find(Application, {
+          where: {
+            id: In(dto.applicationIds),
+            bookId,
+            status: ApplicationStatus.PENDING,
+          },
+        });
 
-      if (applications.length !== dto.applicationIds.length) {
-        throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
-      }
+        if (applications.length !== dto.applicationIds.length) {
+          throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
+        }
 
-      if (dto.action === ApplicationStatus.APPROVED) {
-        const reserved = await ApplicationBookHelper.tryReserveCopies(
-          manager.getRepository(Book),
-          book.id,
-          applications.length,
-        );
-        if (!reserved) {
-          throw new ConflictException(
-            ApplicationErrors.APPLICATION_NO_AVAILABLE_COPIES,
+        if (dto.action === ApplicationStatus.APPROVED) {
+          const reserved = await ApplicationBookHelper.tryReserveCopies(
+            manager.getRepository(Book),
+            book.id,
+            applications.length,
           );
+          if (!reserved) {
+            throw new ConflictException(
+              ApplicationErrors.APPLICATION_NO_AVAILABLE_COPIES,
+            );
+          }
         }
-      }
 
-      const now = new Date();
-      const copySentAt = ApplicationBookHelper.shouldSetCopySentAt(book)
-        ? now
-        : undefined;
+        const now = new Date();
+        const copySentAt = ApplicationBookHelper.shouldSetCopySentAt(book)
+          ? now
+          : undefined;
 
-      for (const application of applications) {
-        ApplicationValidationHelper.validateApplicationStatus(
-          application,
-          ApplicationStatus.PENDING,
-          ApplicationErrors.APPLICATION_NOT_PENDING,
-        );
-        this.assignRespondedStatus(
-          application,
-          dto.action,
-          authorId,
-          dto.authorNotes,
-        );
-        if (copySentAt) {
-          application.copySentAt = copySentAt;
+        for (const application of applications) {
+          ApplicationValidationHelper.validateApplicationStatus(
+            application,
+            ApplicationStatus.PENDING,
+            ApplicationErrors.APPLICATION_NOT_PENDING,
+          );
+          this.assignRespondedStatus(
+            application,
+            dto.action,
+            authorId,
+            dto.authorNotes,
+          );
+          if (copySentAt) {
+            application.copySentAt = copySentAt;
+          }
         }
-      }
 
-      await manager.save(Application, applications);
+        await manager.save(Application, applications);
 
-      await ApplicationNotificationHelper.sendBulkStatusNotifications(
-        this.notificationService,
-        applications,
-        book.title,
-        this.logger,
-      );
+        return {
+          updated: applications.length,
+          applications,
+          bookTitle: book.title,
+        };
+      });
 
-      return { updated: applications.length };
-    });
+    await ApplicationNotificationHelper.sendBulkStatusNotifications(
+      this.notificationService,
+      applications,
+      bookTitle,
+      this.logger,
+    );
+
+    return { updated };
   }
 
   async markCopySent(
@@ -557,7 +564,7 @@ export class ApplicationsService {
     rejected: number;
     message: string;
   }> {
-    return this.dataSource.transaction(async (manager) => {
+    const txResult = await this.dataSource.transaction(async (manager) => {
       const book = await manager.findOne(Book, {
         where: { id: bookId },
         lock: { mode: 'pessimistic_write' },
@@ -588,6 +595,9 @@ export class ApplicationsService {
           approved: 0,
           rejected: 0,
           message: 'No pending applications to process',
+          bookTitle: book.title,
+          winnersToNotify: [] as Application[],
+          losersToNotify: [] as Application[],
         };
       }
 
@@ -602,13 +612,16 @@ export class ApplicationsService {
       const bookRepo = manager.getRepository(Book);
       const applicationRepo = manager.getRepository(Application);
 
-      await this.processLotteryWinners(
+      const winnersToNotify = await this.processLotteryWinners(
         winners,
         book,
         applicationRepo,
         bookRepo,
       );
-      await this.processLotteryLosers(losers, book, applicationRepo);
+      const losersToNotify = await this.processLotteryLosers(
+        losers,
+        applicationRepo,
+      );
 
       if (book.status === BookStatus.ACTIVE) {
         book.status = BookStatus.IN_PROGRESS;
@@ -619,8 +632,35 @@ export class ApplicationsService {
         approved: winners.length,
         rejected: losers.length,
         message: `Lottery completed: ${winners.length} approved, ${losers.length} rejected`,
+        bookTitle: book.title,
+        winnersToNotify,
+        losersToNotify,
       };
     });
+
+    if (txResult.winnersToNotify.length > 0) {
+      await ApplicationNotificationHelper.sendBulkStatusNotifications(
+        this.notificationService,
+        txResult.winnersToNotify,
+        txResult.bookTitle,
+        this.logger,
+      );
+    }
+
+    if (txResult.losersToNotify.length > 0) {
+      await ApplicationNotificationHelper.sendBulkStatusNotifications(
+        this.notificationService,
+        txResult.losersToNotify,
+        txResult.bookTitle,
+        this.logger,
+      );
+    }
+
+    return {
+      approved: txResult.approved,
+      rejected: txResult.rejected,
+      message: txResult.message,
+    };
   }
 
   private async getBookOrThrow(bookId: string): Promise<Book> {
@@ -952,9 +992,9 @@ export class ApplicationsService {
     book: Book,
     applicationRepo: Repository<Application>,
     bookRepo: Repository<Book>,
-  ): Promise<void> {
+  ): Promise<Application[]> {
     if (winners.length === 0) {
-      return;
+      return [];
     }
 
     const now = new Date();
@@ -984,26 +1024,23 @@ export class ApplicationsService {
       updateData,
     );
 
-    await ApplicationNotificationHelper.sendBulkStatusNotifications(
-      this.notificationService,
-      winners.map((w) => ({
-        ...w,
-        status: ApplicationStatus.APPROVED,
-        respondedAt: now,
-        copySentAt: updateData.copySentAt,
-      })) as Application[],
-      book.title,
-      this.logger,
+    return winners.map(
+      (w) =>
+        ({
+          ...w,
+          status: ApplicationStatus.APPROVED,
+          respondedAt: now,
+          copySentAt: updateData.copySentAt,
+        }) as Application,
     );
   }
 
   private async processLotteryLosers(
     losers: Application[],
-    book: Book,
     applicationRepo: Repository<Application>,
-  ): Promise<void> {
+  ): Promise<Application[]> {
     if (losers.length === 0) {
-      return;
+      return [];
     }
 
     const now = new Date();
@@ -1015,15 +1052,13 @@ export class ApplicationsService {
       },
     );
 
-    await ApplicationNotificationHelper.sendBulkStatusNotifications(
-      this.notificationService,
-      losers.map((l) => ({
-        ...l,
-        status: ApplicationStatus.REJECTED,
-        respondedAt: now,
-      })) as Application[],
-      book.title,
-      this.logger,
+    return losers.map(
+      (l) =>
+        ({
+          ...l,
+          status: ApplicationStatus.REJECTED,
+          respondedAt: now,
+        }) as Application,
     );
   }
 }

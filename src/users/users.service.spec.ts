@@ -3,8 +3,9 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UsersService } from './users.service';
 import { User } from './entity/user.entity';
-import { Book } from '../books/entity';
 import { Application } from '../applications/entity/application.entity';
+import { BooksAnalyticsAuthorQueriesHelper } from '../books/helpers/books-analytics-author-queries.helper';
+import { UsersReaderStatsHelper } from './helpers/users-reader-stats.helper';
 import { Review } from '../reviews/entity/review.entity';
 import { FilesService } from '../files/files.service';
 import {
@@ -33,10 +34,20 @@ function createMockRepo(): MockRepo {
 describe('UsersService', () => {
   let service: UsersService;
   let usersRepository: MockRepo<User>;
-  let bookRepository: MockRepo<Book>;
   let applicationRepository: MockRepo<Application>;
   let reviewRepository: MockRepo<Review>;
   let filesService: jest.Mocked<FilesService>;
+  let authorStatsQueries: jest.Mocked<
+    Pick<
+      BooksAnalyticsAuthorQueriesHelper,
+      | 'getBookStatusCounts'
+      | 'getApplicationOverview'
+      | 'getAuthorAverageRating'
+      | 'getBooksWithReviews'
+      | 'getAuthorAverageResponseTime'
+    >
+  >;
+  let readerStatsHelper: jest.Mocked<Pick<UsersReaderStatsHelper, 'getStats'>>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -44,10 +55,6 @@ describe('UsersService', () => {
         UsersService,
         {
           provide: getRepositoryToken(User),
-          useValue: createMockRepo(),
-        },
-        {
-          provide: getRepositoryToken(Book),
           useValue: createMockRepo(),
         },
         {
@@ -65,12 +72,27 @@ describe('UsersService', () => {
             deleteFileByUrl: jest.fn(),
           },
         },
+        {
+          provide: BooksAnalyticsAuthorQueriesHelper,
+          useValue: {
+            getBookStatusCounts: jest.fn(),
+            getApplicationOverview: jest.fn(),
+            getAuthorAverageRating: jest.fn(),
+            getBooksWithReviews: jest.fn(),
+            getAuthorAverageResponseTime: jest.fn(),
+          },
+        },
+        {
+          provide: UsersReaderStatsHelper,
+          useValue: { getStats: jest.fn() },
+        },
       ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
     usersRepository = module.get(getRepositoryToken(User));
-    bookRepository = module.get(getRepositoryToken(Book));
+    authorStatsQueries = module.get(BooksAnalyticsAuthorQueriesHelper);
+    readerStatsHelper = module.get(UsersReaderStatsHelper);
     applicationRepository = module.get(getRepositoryToken(Application));
     reviewRepository = module.get(getRepositoryToken(Review));
     filesService = module.get(FilesService);
@@ -261,12 +283,13 @@ describe('UsersService', () => {
         id: 'u1',
         username: 'user',
         email: 'test@example.com',
+        userType: UserType.READER,
       } as any;
       usersRepository.findOne.mockResolvedValue(user);
-      jest.spyOn(service, 'getUserStats').mockResolvedValue({
+      readerStatsHelper.getStats.mockResolvedValue({
         userType: UserType.READER,
         totalReviews: 0,
-      } as any);
+      });
 
       const result = await service.getProfile('u1');
 
@@ -326,24 +349,6 @@ describe('UsersService', () => {
     });
   });
 
-  describe('updateAvatar', () => {
-    it('should set avatarUrl and return sanitized user', async () => {
-      const user: User = { id: 'u1', username: 'user' } as any;
-      jest.spyOn(service, 'findOneById').mockResolvedValue(user);
-      usersRepository.save.mockImplementation(async (u: any) => u);
-
-      const result: any = await service.updateAvatar(
-        'u1',
-        'https://cdn/avatar.png',
-      );
-
-      expect(usersRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ avatarUrl: 'https://cdn/avatar.png' }),
-      );
-      expect(result).toBeDefined();
-    });
-  });
-
   describe('remove', () => {
     it('should throw NotFoundException when nothing deleted', async () => {
       usersRepository.delete.mockResolvedValue({ affected: 0 } as any);
@@ -379,9 +384,7 @@ describe('UsersService', () => {
     it('should not call deleteFileByUrl when user has no existing avatar', async () => {
       const user: User = { id: 'u1', avatarUrl: null } as any;
       jest.spyOn(service, 'findOneById').mockResolvedValue(user);
-      jest
-        .spyOn(service, 'updateAvatar')
-        .mockResolvedValue({ id: 'u1', avatarUrl: 'new-url' } as any);
+      usersRepository.save.mockImplementation(async (u: any) => u);
       (filesService.uploadImage as jest.Mock).mockResolvedValue({
         fileUrl: 'new-url',
         fileSize: 123,
@@ -413,9 +416,7 @@ describe('UsersService', () => {
       } as any;
 
       jest.spyOn(service, 'findOneById').mockResolvedValue(user);
-      jest
-        .spyOn(service, 'updateAvatar')
-        .mockResolvedValue({ id: 'u1', avatarUrl: 'new-url' } as any);
+      usersRepository.save.mockImplementation(async (u: any) => u);
 
       (filesService.uploadImage as jest.Mock).mockResolvedValue({
         fileUrl: 'new-url',
@@ -503,117 +504,64 @@ describe('UsersService', () => {
       expect(result.userType).toBe(UserType.AUTHOR);
     });
 
-    it('should call getReaderStatsData for reader', async () => {
+    it('should delegate reader stats to UsersReaderStatsHelper', async () => {
       usersRepository.findOne.mockResolvedValue({
         id: 'u1',
         userType: UserType.READER,
       } as any);
 
-      const spy = jest
-        .spyOn<any, any>(service as any, 'getReaderStatsData')
-        .mockResolvedValue({ userType: UserType.READER });
+      readerStatsHelper.getStats.mockResolvedValue({ userType: UserType.READER });
 
       const result = await service.getUserStats('u1');
 
-      expect(spy).toHaveBeenCalledWith('u1');
+      expect(readerStatsHelper.getStats).toHaveBeenCalledWith('u1');
       expect(result.userType).toBe(UserType.READER);
     });
 
-    it('getAuthorStatsData returns full stats when repos return data', async () => {
+    it('returns composed author stats from analytics queries', async () => {
       usersRepository.findOne.mockResolvedValue({
         id: 'a1',
         userType: UserType.AUTHOR,
       } as any);
-      bookRepository.count.mockResolvedValue(10);
-      applicationRepository.count
-        .mockResolvedValueOnce(5) // totalApplications
-        .mockResolvedValueOnce(5) // approvedApplications
-        .mockResolvedValueOnce(0) // pendingApplications
-        .mockResolvedValueOnce(5); // applicationsThisMonth
+
+      authorStatsQueries.getBookStatusCounts.mockResolvedValue({
+        total: 10,
+        published: 8,
+        draft: 1,
+        inProgress: 1,
+        completed: 0,
+      });
+      authorStatsQueries.getApplicationOverview.mockResolvedValue({
+        total: 5,
+        approved: 4,
+        pending: 1,
+        rejected: 0,
+        thisMonth: 2,
+      });
       reviewRepository.count.mockResolvedValue(3);
+      authorStatsQueries.getAuthorAverageRating.mockResolvedValue(4.5);
+      authorStatsQueries.getBooksWithReviews.mockResolvedValue(2);
+      authorStatsQueries.getAuthorAverageResponseTime.mockResolvedValue(2);
 
       const chain = {
         leftJoin: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getRawOne: jest
-          .fn()
-          .mockResolvedValueOnce({ average: '4.5' })
-          .mockResolvedValueOnce({ count: '2' })
-          .mockResolvedValueOnce({ total: '100' }),
-        getMany: jest.fn().mockResolvedValue([
-          {
-            appliedAt: new Date(),
-            respondedAt: new Date(Date.now() + 86400000),
-          },
-        ]),
+        getRawOne: jest.fn().mockResolvedValue({ total: '100' }),
       };
       reviewRepository.createQueryBuilder.mockReturnValue(chain);
-      applicationRepository.createQueryBuilder.mockReturnValue(chain);
 
       const result = (await service.getUserStats('a1')) as any;
 
       expect(result.userType).toBe(UserType.AUTHOR);
       expect(result.totalBooks).toBe(10);
-      expect(result.publishedBooks).toBe(10);
+      expect(result.publishedBooks).toBe(8);
       expect(result.totalApplications).toBe(5);
-      expect(result.approvedApplications).toBe(5);
-      expect(result.pendingApplications).toBe(0);
-      expect(result.approvalRate).toBe(100);
-    });
-
-    it('getReaderStatsData returns full stats when repos return data', async () => {
-      usersRepository.findOne.mockResolvedValue({
-        id: 'r1',
-        userType: UserType.READER,
-      } as any);
-      applicationRepository.count
-        .mockResolvedValueOnce(4) // totalApplications
-        .mockResolvedValueOnce(4) // approvedApplications
-        .mockResolvedValueOnce(0) // pendingApplications
-        .mockResolvedValueOnce(4) // completedReads
-        .mockResolvedValueOnce(4) // completedReadsThisMonth
-        .mockResolvedValueOnce(4); // completedReadsThisYear
-      reviewRepository.count.mockResolvedValue(2);
-
-      const chain = {
-        leftJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        addGroupBy: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getRawOne: jest
-          .fn()
-          .mockResolvedValueOnce({ average: '4.0' })
-          .mockResolvedValueOnce({ total: '50' })
-          .mockResolvedValueOnce({ total: '200' }),
-        getRawMany: jest
-          .fn()
-          .mockResolvedValue([{ genreId: 1, genreName: 'Fiction', count: 2 }]),
-        getMany: jest.fn().mockResolvedValue([
-          {
-            readingStartedAt: new Date(0),
-            readingCompletedAt: new Date(86400000),
-          },
-        ]),
-      };
-      reviewRepository.createQueryBuilder.mockReturnValue(chain);
-      applicationRepository.createQueryBuilder.mockReturnValue(chain);
-
-      const result = (await service.getUserStats('r1')) as any;
-
-      expect(result.userType).toBe(UserType.READER);
-      expect(result.totalApplications).toBe(4);
       expect(result.approvedApplications).toBe(4);
-      expect(result.pendingApplications).toBe(0);
-      expect(result.successRate).toBe(100);
-      expect(result.completedReads).toBe(4);
-      expect(result.totalReviews).toBe(2);
+      expect(result.pendingApplications).toBe(1);
+      expect(result.applicationsThisMonth).toBe(2);
+      expect(result.approvalRate).toBe(80);
     });
   });
 
@@ -699,12 +647,13 @@ describe('UsersService', () => {
     });
 
     it('should return user and stats when user exists', async () => {
-      const user: User = { id: 'u1', email: 'test@example.com' } as any;
+      const user: User = {
+        id: 'u1',
+        email: 'test@example.com',
+        userType: UserType.READER,
+      } as any;
       usersRepository.findOne.mockResolvedValue(user);
-
-      jest
-        .spyOn(service, 'getUserStats')
-        .mockResolvedValue({ userType: UserType.READER } as any);
+      readerStatsHelper.getStats.mockResolvedValue({ userType: UserType.READER });
 
       const result = await service.getMyStats('u1');
 

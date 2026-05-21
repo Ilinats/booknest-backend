@@ -59,6 +59,11 @@ import { BookAuthorGuard, ApprovedBookApplicationGuard } from './guards';
     ApprovedBookApplicationGuard,
   ],
   controllers: [BooksController],
-  exports: [BooksService, BooksAnalyticsService, BooksFileService],
+  exports: [
+    BooksService,
+    BooksAnalyticsService,
+    BooksAnalyticsAuthorQueriesHelper,
+    BooksFileService,
+  ],
 })
 export class BooksModule {}

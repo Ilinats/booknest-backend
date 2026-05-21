@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, Not, IsNull } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Book } from '../entity/book.entity';
-import { BookStatus } from '../enums';
+import { BookStatus, SelectionMethod } from '../enums';
 
 @Injectable()
 export class BooksSchedulerService {
@@ -21,17 +21,32 @@ export class BooksSchedulerService {
     try {
       const now = new Date();
 
-      const activeToInProgress = await this.bookRepo.update(
+      const nonLotteryActiveToInProgress = await this.bookRepo.update(
         {
           status: BookStatus.ACTIVE,
           applicationDeadline: LessThan(now),
+          selectionMethod: Not(SelectionMethod.LOTTERY),
         },
         { status: BookStatus.IN_PROGRESS },
       );
 
-      if (activeToInProgress.affected) {
+      const lotteryActiveToInProgress = await this.bookRepo.update(
+        {
+          status: BookStatus.ACTIVE,
+          applicationDeadline: LessThan(now),
+          selectionMethod: SelectionMethod.LOTTERY,
+          lotteryRunAt: Not(IsNull()),
+        },
+        { status: BookStatus.IN_PROGRESS },
+      );
+
+      const activeToInProgressAffected =
+        (nonLotteryActiveToInProgress.affected ?? 0) +
+        (lotteryActiveToInProgress.affected ?? 0);
+
+      if (activeToInProgressAffected > 0) {
         this.logger.log(
-          `Updated ${activeToInProgress.affected} book(s) from ACTIVE to IN_PROGRESS (application deadline passed).`,
+          `Updated ${activeToInProgressAffected} book(s) from ACTIVE to IN_PROGRESS (application deadline passed).`,
         );
       }
 
@@ -49,7 +64,7 @@ export class BooksSchedulerService {
         );
       }
 
-      if (!activeToInProgress.affected && !inProgressToCompleted.affected) {
+      if (!activeToInProgressAffected && !inProgressToCompleted.affected) {
         this.logger.log('No books required a status transition.');
       }
     } catch (error) {

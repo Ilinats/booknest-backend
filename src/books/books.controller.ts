@@ -49,6 +49,8 @@ import {
 import { Book } from './entity/book.entity';
 import { BasePaginationDto } from '../common';
 import { Paginate, PaginateQuery } from 'nestjs-paginate';
+import { ReviewsService } from '../reviews/reviews.service';
+import { FindReviewsDto } from '../reviews/dto/find-reviews.dto';
 
 @ApiTags('Books')
 @Controller('books')
@@ -56,6 +58,7 @@ export class BooksController {
   constructor(
     private readonly booksService: BooksService,
     private readonly filesService: FilesService,
+    private readonly reviewsService: ReviewsService,
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -483,45 +486,29 @@ export class BooksController {
     return this.booksService.analytics(bookId);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
-  @Roles(UserType.AUTHOR)
+  @UseGuards(JwtAuthGuard)
   @Get(':bookId/reviews')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all reviews for a book (Author only)' })
-  @ApiQuery({ type: () => BasePaginationDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Paginated list of all reviews for the book',
+  @ApiOperation({
+    summary: 'Get reviews for a book (Authenticated)',
+    description:
+      'Book authors: all reviews. Other logged-in users: public reviews plus their own (including private).',
   })
+  @ApiQuery({ type: () => FindReviewsDto })
+  @ApiResponse({ status: 200, description: 'Paginated list of reviews' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Author must own the book',
-  })
-  getBookReviewsForAuthor(
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  getBookReviews(
+    @CurrentUser() user: JwtPayload,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
-    @Paginate() query: PaginateQuery,
+    @Query() dto: FindReviewsDto,
   ) {
-    return this.booksService.getBookReviewsForAuthor(bookId, query);
-  }
-
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserType.READER)
-  @Get(':bookId/reviews/mine')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get your review for a book (Reader only)' })
-  @ApiQuery({ type: () => BasePaginationDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Paginated list containing at most your own review',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  getMyBookReview(
-    @CurrentUser('sub') readerId: string,
-    @Param('bookId', new ParseUUIDPipe()) bookId: string,
-    @Paginate() query: PaginateQuery,
-  ) {
-    return this.booksService.getMyBookReview(readerId, bookId, query);
+    return this.reviewsService.getBookReviews(
+      bookId,
+      dto,
+      user.sub,
+      user.userType,
+    );
   }
 
   @UseGuards(OptionalJwtAuthGuard)

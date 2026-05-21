@@ -9,6 +9,8 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,7 +21,6 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FriendsService } from './friends.service';
-import { UserProfileService } from '../user-profile/user-profile.service';
 import { UserActivityService } from '../user-activity/user-activity.service';
 import { getUserId } from '../common';
 import {
@@ -27,7 +28,8 @@ import {
   JwtPayload,
 } from '../auth/decorators/current-user.decorator';
 import { UserType } from '../users/enums';
-import { FriendRequestType, FriendStatus, FriendsListSortBy } from './enums';
+import { FriendRequestType, FriendStatus } from './enums';
+import { GetFriendsQueryDto } from './dto/get-friends-query.dto';
 
 @ApiTags('Friends')
 @Controller('friends')
@@ -36,7 +38,6 @@ import { FriendRequestType, FriendStatus, FriendsListSortBy } from './enums';
 export class FriendsController {
   constructor(
     private readonly friendsService: FriendsService,
-    private readonly userProfileService: UserProfileService,
     private readonly userActivityService: UserActivityService,
   ) {}
 
@@ -75,51 +76,36 @@ export class FriendsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get friends list (Authenticated)' })
-  @ApiQuery({
-    name: 'status',
-    required: false,
-    enum: FriendStatus,
-    description: 'Filter by friend status',
+  @ApiOperation({
+    summary: 'Get friends or pending requests (Authenticated)',
+    description:
+      'status=accepted (default): accepted friends. status=pending: pending requests; use type=sent or type=received (default received).',
   })
-  @ApiResponse({ status: 200, description: 'List of friends' })
+  @ApiResponse({ status: 200, description: 'List of user profiles' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async getFriends(
     @Request() req: any,
-    @Query('status') status?: FriendStatus,
+    @Query() query: GetFriendsQueryDto,
   ) {
     const userId = getUserId(req);
-    return this.friendsService.getFriends(userId, status);
-  }
+    const status = query.status ?? FriendStatus.ACCEPTED;
 
-  @Get('list')
-  @ApiOperation({
-    summary: 'Get all accepted friends as user list (Authenticated)',
-  })
-  @ApiQuery({
-    name: 'sortBy',
-    required: false,
-    enum: FriendsListSortBy,
-    description: 'Sort order for friends list',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of friends (user information)',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getFriendsList(
-    @Request() req: any,
-    @Query('sortBy') sortBy?: FriendsListSortBy,
-  ) {
-    const userId = getUserId(req);
-    return this.friendsService.getFriendsList(userId, sortBy);
+    if (status === FriendStatus.PENDING) {
+      return this.friendsService.getPendingFriendRequests(
+        userId,
+        query.type ?? FriendRequestType.RECEIVED,
+      );
+    }
+
+    return this.friendsService.getFriendsList(userId, query.sortBy);
   }
 
   @Get('search')
   @ApiOperation({
     summary: 'Search users to add as friends (Authenticated)',
     description:
-      'Search for users by username or name, excluding current friends. Returns friendship status for each user.',
+      'Search for users by username or name. Returns friendship status for each user.',
   })
   @ApiQuery({
     name: 'q',
@@ -133,25 +119,7 @@ export class FriendsController {
     type: Number,
     description: 'Maximum number of results (default: 20)',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'List of users with friendship status',
-    schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          user: { $ref: '#/components/schemas/UserPublicResponseDto' },
-          friendshipStatus: {
-            type: 'string',
-            enum: ['accepted', 'pending', null],
-            nullable: true,
-          },
-          isRequester: { type: 'boolean' },
-        },
-      },
-    },
-  })
+  @ApiResponse({ status: 200, description: 'List of users with friendship status' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async searchUsersForFriends(
     @Request() req: any,
@@ -165,52 +133,6 @@ export class FriendsController {
       query,
       limitNum > 0 ? limitNum : 20,
     );
-  }
-
-  @Get('requests/sent')
-  @ApiOperation({
-    summary: 'Get sent friend requests as user list (Authenticated)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of sent friend requests (user information)',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getSentRequests(@Request() req: any) {
-    const userId = getUserId(req);
-    return this.friendsService.getSentRequestsList(userId);
-  }
-
-  @Get('requests/received')
-  @ApiOperation({
-    summary: 'Get received friend requests as user list (Authenticated)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of received friend requests (user information)',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getReceivedRequests(@Request() req: any) {
-    const userId = getUserId(req);
-    return this.friendsService.getReceivedRequestsList(userId);
-  }
-
-  @Get('requests')
-  @ApiOperation({ summary: 'Get friend requests (Authenticated)' })
-  @ApiQuery({
-    name: 'type',
-    required: false,
-    enum: FriendRequestType,
-    description: 'Filter by request type',
-  })
-  @ApiResponse({ status: 200, description: 'List of friend requests' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getFriendRequests(
-    @Request() req: any,
-    @Query('type') type?: FriendRequestType,
-  ) {
-    const userId = getUserId(req);
-    return this.friendsService.getFriendRequests(userId, type);
   }
 
   @Get('status/:userId')

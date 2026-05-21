@@ -26,7 +26,7 @@ import { UpsertPreferenceDto } from './dto/upsert-preference.dto';
 @ApiTags('User Genre Preferences')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
-@Controller('me/genre-preferences')
+@Controller('users/me/genre-preferences')
 export class UserGenrePreferencesController {
   constructor(private readonly prefsService: UserGenrePreferencesService) {}
 

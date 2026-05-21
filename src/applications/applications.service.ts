@@ -20,7 +20,6 @@ import { ApplicationStatus, ReadingStatus } from './enums';
 import { SelectionMethod } from '../books/enums';
 import {
   CreateApplicationDto,
-  ApplicationStatusDto,
   BulkActionDto,
   UpdateReadingStatusDto,
   BulkMarkSentDto,
@@ -193,14 +192,20 @@ export class ApplicationsService {
       application.applicationMessage = dto.applicationMessage;
     }
 
+    let statusChanged = false;
     if (dto.status !== undefined) {
-      await this.handleStatusUpdate(
+      if (!isAuthor) {
+        throw new ForbiddenException(BookErrors.AUTHOR_ACCESS_REQUIRED);
+      }
+      this.validateNotLotterySelection(application.book);
+      await this.changePendingApplicationStatus(
         application,
-        isAuthor,
-        userId,
+        application.book,
         dto.status,
+        userId,
         dto.authorNotes,
       );
+      statusChanged = true;
     }
 
     if (dto.readingStatus !== undefined) {
@@ -217,7 +222,18 @@ export class ApplicationsService {
       application.copyReceivedAt = new Date();
     }
 
-    return await this.applicationRepo.save(application);
+    const saved = await this.applicationRepo.save(application);
+
+    if (statusChanged) {
+      await ApplicationNotificationHelper.sendStatusNotification(
+        this.notificationService,
+        saved,
+        application.book.title,
+        this.logger,
+      );
+    }
+
+    return saved;
   }
 
   async getBookApplications(
@@ -259,62 +275,6 @@ export class ApplicationsService {
     return result;
   }
 
-  async updateApplicationStatus(
-    applicationId: string,
-    authorId: string,
-    userType?: string,
-    dto?: ApplicationStatusDto,
-  ): Promise<Application> {
-    ensureAuthor(userType);
-
-    const application = await this.findApplicationOrThrow(
-      { id: applicationId },
-      ['book', 'book.author'],
-    );
-
-    ApplicationValidationHelper.validateBookOwnership(
-      application.book,
-      authorId,
-    );
-    ApplicationValidationHelper.validateApplicationStatus(
-      application,
-      ApplicationStatus.PENDING,
-      ApplicationErrors.APPLICATION_NOT_PENDING,
-    );
-
-    const status = dto?.status ?? ApplicationStatus.APPROVED;
-    const updateData: Partial<Application> = {
-      status,
-      authorNotes: dto?.authorNotes ?? application.authorNotes,
-      respondedAt: new Date(),
-      respondedById: authorId,
-    };
-
-    if (status === ApplicationStatus.APPROVED) {
-      await ApplicationBookHelper.decrementAvailableCopies(
-        this.bookRepo,
-        application.bookId,
-        1,
-      );
-
-      if (ApplicationBookHelper.shouldSetCopySentAt(application.book)) {
-        updateData.copySentAt = new Date();
-      }
-    }
-
-    Object.assign(application, updateData);
-    const saved = await this.applicationRepo.save(application);
-
-    await ApplicationNotificationHelper.sendStatusNotification(
-      this.notificationService,
-      saved,
-      application.book.title,
-      this.logger,
-    );
-
-    return saved;
-  }
-
   async bulkUpdateApplicationStatus(
     bookId: string,
     authorId: string,
@@ -340,27 +300,44 @@ export class ApplicationsService {
       throw new NotFoundException(ApplicationErrors.APPLICATION_NOT_FOUND);
     }
 
-    const updatedApplications = this.updateApplicationsStatus(
-      applications,
-      dto.action,
-      authorId,
-      dto.authorNotes,
-    );
-
-    await this.applicationRepo.save(updatedApplications);
+    for (const application of applications) {
+      ApplicationValidationHelper.validateApplicationStatus(
+        application,
+        ApplicationStatus.PENDING,
+        ApplicationErrors.APPLICATION_NOT_PENDING,
+      );
+      this.assignRespondedStatus(
+        application,
+        dto.action,
+        authorId,
+        dto.authorNotes,
+      );
+    }
 
     if (dto.action === ApplicationStatus.APPROVED) {
-      await this.handleBulkApproval(updatedApplications, book);
+      await ApplicationBookHelper.decrementAvailableCopies(
+        this.bookRepo,
+        book.id,
+        applications.length,
+      );
+      if (ApplicationBookHelper.shouldSetCopySentAt(book)) {
+        const now = new Date();
+        applications.forEach((application) => {
+          application.copySentAt = now;
+        });
+      }
     }
+
+    await this.applicationRepo.save(applications);
 
     await ApplicationNotificationHelper.sendBulkStatusNotifications(
       this.notificationService,
-      updatedApplications,
+      applications,
       book.title,
       this.logger,
     );
 
-    return { updated: updatedApplications.length };
+    return { updated: applications.length };
   }
 
   async markCopySent(
@@ -658,38 +635,41 @@ export class ApplicationsService {
     );
   }
 
-  private async handleStatusUpdate(
+  private assignRespondedStatus(
     application: Application,
-    isAuthor: boolean,
-    userId: string,
     status: ApplicationStatus,
+    authorId: string,
+    authorNotes?: string,
+  ): void {
+    application.status = status;
+    application.authorNotes = authorNotes ?? application.authorNotes;
+    application.respondedAt = new Date();
+    application.respondedById = authorId;
+  }
+
+  private async changePendingApplicationStatus(
+    application: Application,
+    book: Book,
+    status: ApplicationStatus,
+    authorId: string,
     authorNotes?: string,
   ): Promise<void> {
-    if (!isAuthor) {
-      throw new ForbiddenException(BookErrors.AUTHOR_ACCESS_REQUIRED);
-    }
-
     ApplicationValidationHelper.validateApplicationStatus(
       application,
       ApplicationStatus.PENDING,
       ApplicationErrors.APPLICATION_NOT_PENDING,
     );
 
-    this.validateNotLotterySelection(application.book);
-
-    application.status = status;
-    application.authorNotes = authorNotes ?? application.authorNotes;
-    application.respondedAt = new Date();
-    application.respondedById = userId;
+    this.assignRespondedStatus(application, status, authorId, authorNotes);
 
     if (status === ApplicationStatus.APPROVED) {
       await ApplicationBookHelper.decrementAvailableCopies(
         this.bookRepo,
-        application.bookId,
+        book.id,
         1,
       );
 
-      if (ApplicationBookHelper.shouldSetCopySentAt(application.book)) {
+      if (ApplicationBookHelper.shouldSetCopySentAt(book)) {
         application.copySentAt = new Date();
       }
     }
@@ -815,42 +795,6 @@ export class ApplicationsService {
     });
   }
 
-  private updateApplicationsStatus(
-    applications: Application[],
-    status: ApplicationStatus,
-    authorId: string,
-    authorNotes?: string,
-  ): Application[] {
-    const now = new Date();
-    return applications.map((app) => {
-      app.status = status;
-      app.authorNotes = authorNotes ?? app.authorNotes;
-      app.respondedAt = now;
-      app.respondedById = authorId;
-      return app;
-    });
-  }
-
-  private async handleBulkApproval(
-    applications: Application[],
-    book: Book,
-  ): Promise<void> {
-    await ApplicationBookHelper.decrementAvailableCopies(
-      this.bookRepo,
-      book.id,
-      applications.length,
-    );
-
-    const now = new Date();
-    applications.forEach((app) => {
-      if (ApplicationBookHelper.shouldSetCopySentAt(book)) {
-        app.copySentAt = now;
-      }
-    });
-
-    await this.applicationRepo.save(applications);
-  }
-
   private validateLotterySelection(book: Book): void {
     if (book.selectionMethod !== SelectionMethod.LOTTERY) {
       throw new BadRequestException(
@@ -897,7 +841,11 @@ export class ApplicationsService {
     applications: Application[],
     availableCopies: number,
   ): { winners: Application[]; losers: Application[] } {
-    const shuffled = [...applications].sort(() => Math.random() - 0.5);
+    const shuffled = [...applications];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
     const winners = shuffled.slice(0, availableCopies);
     const losers = shuffled.slice(availableCopies);
     return { winners, losers };

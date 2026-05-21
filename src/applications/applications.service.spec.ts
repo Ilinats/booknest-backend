@@ -795,7 +795,13 @@ describe('ApplicationsService (minimal)', () => {
         readerId: 'reader-1',
         bookId: 'book-1',
         status: ApplicationStatus.PENDING,
-        book: { id: 'book-1', authorId: 'author-1', distributionType: DistributionType.DIGITAL } as any,
+        book: {
+          id: 'book-1',
+          authorId: 'author-1',
+          title: 'Book',
+          distributionType: DistributionType.DIGITAL,
+          selectionMethod: SelectionMethod.AUTHOR_SELECTS,
+        } as any,
       } as any;
       applicationRepo.findOne.mockResolvedValue(app);
       applicationRepo.save.mockImplementation(async (a: any) => a);
@@ -810,6 +816,34 @@ describe('ApplicationsService (minimal)', () => {
 
       expect(result.status).toBe(ApplicationStatus.APPROVED);
       expect(result.copySentAt).toBeInstanceOf(Date);
+      expect(notificationService.notifyApplicationApproved).toHaveBeenCalled();
+    });
+
+    it('rejects application via update and sends notification', async () => {
+      const app: Application = {
+        id: 'app-1',
+        readerId: 'reader-1',
+        bookId: 'book-1',
+        status: ApplicationStatus.PENDING,
+        book: {
+          id: 'book-1',
+          authorId: 'author-1',
+          title: 'Book',
+          selectionMethod: SelectionMethod.AUTHOR_SELECTS,
+        } as any,
+      } as any;
+      applicationRepo.findOne.mockResolvedValue(app);
+      applicationRepo.save.mockImplementation(async (a: any) => a);
+
+      const result = await service.update(
+        'app-1',
+        'author-1',
+        UserType.AUTHOR,
+        { status: ApplicationStatus.REJECTED } as any,
+      );
+
+      expect(result.status).toBe(ApplicationStatus.REJECTED);
+      expect(notificationService.notifyApplicationRejected).toHaveBeenCalled();
     });
 
     it('allows reader to update readingStatus to CURRENTLY_READING', async () => {
@@ -897,55 +931,6 @@ describe('ApplicationsService (minimal)', () => {
       );
 
       expect(result.copyReceivedAt).toBeInstanceOf(Date);
-    });
-  });
-
-  describe('updateApplicationStatus', () => {
-    it('rejects application and sends notification', async () => {
-      const app: Application = {
-        id: 'app-1',
-        readerId: 'reader-1',
-        bookId: 'book-1',
-        status: ApplicationStatus.PENDING,
-        book: { id: 'book-1', authorId: 'author-1', title: 'Book' } as any,
-      } as any;
-      applicationRepo.findOne.mockResolvedValue(app);
-      applicationRepo.save.mockImplementation(async (a: any) => a);
-
-      const result = await service.updateApplicationStatus(
-        'app-1',
-        'author-1',
-        UserType.AUTHOR,
-        { status: ApplicationStatus.REJECTED } as any,
-      );
-
-      expect(result.status).toBe(ApplicationStatus.REJECTED);
-      expect(notificationService.notifyApplicationRejected).toHaveBeenCalled();
-    });
-
-    it('approves and sets copySentAt when book is digital', async () => {
-      const app: Application = {
-        id: 'app-1',
-        readerId: 'reader-1',
-        bookId: 'book-1',
-        status: ApplicationStatus.PENDING,
-        copySentAt: null,
-        book: { id: 'book-1', authorId: 'author-1', title: 'Book', distributionType: DistributionType.DIGITAL } as any,
-      } as any;
-      applicationRepo.findOne.mockResolvedValue(app);
-      applicationRepo.save.mockImplementation(async (a: any) => a);
-      jest.spyOn(ApplicationBookHelper, 'shouldSetCopySentAt').mockReturnValue(true);
-
-      const result = await service.updateApplicationStatus(
-        'app-1',
-        'author-1',
-        UserType.AUTHOR,
-        { status: ApplicationStatus.APPROVED } as any,
-      );
-
-      expect(result.status).toBe(ApplicationStatus.APPROVED);
-      expect(result.copySentAt).toBeInstanceOf(Date);
-      expect(notificationService.notifyApplicationApproved).toHaveBeenCalled();
     });
   });
 

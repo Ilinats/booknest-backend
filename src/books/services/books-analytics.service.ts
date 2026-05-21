@@ -39,17 +39,16 @@ export class BooksAnalyticsService {
     }
 
     const approvedReaders = applicationCounts.approved;
-    const oldAvailableCopies = book.availableCopies;
-    const correctAvailableCopies = Math.max(
+    const expectedAvailableCopies = Math.max(
       0,
       book.totalCopies - approvedReaders,
     );
+    const availableCopiesMismatch =
+      book.availableCopies !== expectedAvailableCopies;
 
-    if (oldAvailableCopies !== correctAvailableCopies) {
-      book.availableCopies = correctAvailableCopies;
-      await this.bookRepo.save(book);
+    if (availableCopiesMismatch) {
       this.logger.warn(
-        `Fixed availableCopies for book ${bookId}: was ${oldAvailableCopies}, now ${correctAvailableCopies}`,
+        `availableCopies mismatch for book ${bookId}: stored=${book.availableCopies}, expected=${expectedAvailableCopies} (totalCopies=${book.totalCopies}, approved=${approvedReaders})`,
       );
     }
 
@@ -61,6 +60,9 @@ export class BooksAnalyticsService {
       rejectedApplications: applicationCounts.rejected,
       withdrawnApplications: applicationCounts.withdrawn,
       approvedReaders,
+      availableCopies: book.availableCopies,
+      expectedAvailableCopies,
+      availableCopiesMismatch,
       reviewsSubmitted: reviewStats.totalReviews,
       averageRating: reviewStats.averageRating,
     };

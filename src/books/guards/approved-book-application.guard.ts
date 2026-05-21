@@ -1,16 +1,17 @@
 import {
   CanActivate,
   ExecutionContext,
-  Injectable,
   ForbiddenException,
+  Injectable,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Application } from '../../applications/entity/application.entity';
 import { ApplicationStatus } from '../../applications/enums';
-import { JwtPayload } from '../decorators/current-user.decorator';
-import { BookErrors } from '../../books/errors/book-errors';
+import { JwtPayload } from '../../auth/decorators/current-user.decorator';
+import { BookErrors } from '../errors/book-errors';
 
+/** Ensures the reader has an approved application for `params.bookId`. */
 @Injectable()
 export class ApprovedBookApplicationGuard implements CanActivate {
   constructor(

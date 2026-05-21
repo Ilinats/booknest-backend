@@ -16,10 +16,16 @@ import { BooksFileService } from './services/books-file.service';
 import { BookPdfFingerprintService } from './services/book-pdf-fingerprint.service';
 import { BookEpubFingerprintService } from './services/book-epub-fingerprint.service';
 import { BooksSchedulerService } from './services/books-scheduler.service';
-import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
+import {
+  BooksQueryHelper,
+  BooksUpdateHelper,
+  BooksAnalyticsBookQueriesHelper,
+  BooksAnalyticsAuthorQueriesHelper,
+} from './helpers';
 import { SeriesModule } from '../series/series.module';
 import { AuthModule } from '../auth/auth.module';
 import { FilesModule } from '../files/files.module';
+import { BookAuthorGuard, ApprovedBookApplicationGuard } from './guards';
 
 @Module({
   imports: [
@@ -42,11 +48,15 @@ import { FilesModule } from '../files/files.module';
     BooksService,
     BooksQueryHelper,
     BooksUpdateHelper,
+    BooksAnalyticsBookQueriesHelper,
+    BooksAnalyticsAuthorQueriesHelper,
     BooksAnalyticsService,
     BooksFileService,
     BookPdfFingerprintService,
     BookEpubFingerprintService,
     BooksSchedulerService,
+    BookAuthorGuard,
+    ApprovedBookApplicationGuard,
   ],
   controllers: [BooksController],
   exports: [BooksService, BooksAnalyticsService, BooksFileService],

@@ -6,6 +6,8 @@ import { BooksFileService } from './books-file.service';
 import { Book } from '../entity/book.entity';
 import { FilesService } from '../../files/files.service';
 import { UserType } from '../../users/enums';
+import { BookPdfFingerprintService } from './book-pdf-fingerprint.service';
+import { BookEpubFingerprintService } from './book-epub-fingerprint.service';
 
 type MockRepo<T = any> = { [key: string]: jest.Mock };
 
@@ -35,6 +37,25 @@ describe('BooksFileService', () => {
             uploadFile: jest.fn(),
             uploadImage: jest.fn(),
             deleteFileByUrl: jest.fn(),
+            extractFileKeyFromUrl: jest.fn(),
+            getObjectBuffer: jest.fn(),
+            getFileDownloadUrl: jest.fn(),
+          },
+        },
+        {
+          provide: BookPdfFingerprintService,
+          useValue: {
+            isPdfBook: jest.fn(),
+            embedFingerprint: jest.fn(),
+            extractFingerprint: jest.fn(),
+          },
+        },
+        {
+          provide: BookEpubFingerprintService,
+          useValue: {
+            isEpubBook: jest.fn(),
+            embedFingerprint: jest.fn(),
+            extractFingerprint: jest.fn(),
           },
         },
       ],

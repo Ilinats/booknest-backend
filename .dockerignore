@@ -2,7 +2,6 @@
 node_modules
 npm-debug.log
 yarn-error.log
-package-lock.json
 yarn.lock
 
 # Build output
@@ -38,9 +37,14 @@ Thumbs.db
 # Tests
 coverage
 .nyc_output
-test
-*.spec.ts
-*.test.ts
+test/
+**/*.spec.ts
+**/*.test.ts
+**/*.e2e-spec.ts
+**/__tests__/**
+**/__mocks__/**
+jest.config.*
+**/jest-e2e.json
 
 # Logs
 logs

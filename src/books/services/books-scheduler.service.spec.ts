@@ -1,22 +1,23 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository, In, LessThan, Not, IsNull } from 'typeorm';
+import { IsNull, LessThan, Not } from 'typeorm';
 import { BooksSchedulerService } from './books-scheduler.service';
 import { Book } from '../entity/book.entity';
-import { BookStatus } from '../enums';
+import { BookStatus, SelectionMethod } from '../enums';
 
-type MockRepo<T = any> = { [key: string]: jest.Mock };
+type MockRepo = {
+  update: jest.Mock;
+};
 
 function createMockRepo(): MockRepo {
   return {
-    find: jest.fn(),
-    update: jest.fn(),
+    update: jest.fn().mockResolvedValue({ affected: 0 }),
   };
 }
 
 describe('BooksSchedulerService', () => {
   let service: BooksSchedulerService;
-  let bookRepo: MockRepo<Book>;
+  let bookRepo: MockRepo;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -38,24 +39,76 @@ describe('BooksSchedulerService', () => {
   });
 
   describe('handlePassedDeadlines', () => {
-    it('should update statuses for books with passed deadlines', async () => {
-      const activeBook: Book = {
-        id: 'b1',
-        status: BookStatus.ACTIVE,
-        applicationDeadline: new Date(Date.now() - 1000),
-      } as any;
-      const inProgressBook: Book = {
-        id: 'b2',
-        status: BookStatus.IN_PROGRESS,
-        reviewDeadline: new Date(Date.now() - 1000),
-      } as any;
-
-      bookRepo.find
-        .mockResolvedValueOnce([activeBook])
-        .mockResolvedValueOnce([inProgressBook]);
+    it('should bulk-update books whose deadlines have passed', async () => {
+      bookRepo.update
+        .mockResolvedValueOnce({ affected: 1 })
+        .mockResolvedValueOnce({ affected: 0 })
+        .mockResolvedValueOnce({ affected: 2 });
 
       await service.handlePassedDeadlines();
-      expect(bookRepo.update).toHaveBeenCalled();
+
+      expect(bookRepo.update).toHaveBeenCalledTimes(3);
+
+      const now = bookRepo.update.mock.calls[0][0].applicationDeadline
+        .value as Date;
+      expect(now).toBeInstanceOf(Date);
+
+      expect(bookRepo.update).toHaveBeenNthCalledWith(
+        1,
+        {
+          status: BookStatus.ACTIVE,
+          applicationDeadline: LessThan(now),
+          selectionMethod: Not(SelectionMethod.LOTTERY),
+        },
+        { status: BookStatus.IN_PROGRESS },
+      );
+
+      expect(bookRepo.update).toHaveBeenNthCalledWith(
+        2,
+        {
+          status: BookStatus.ACTIVE,
+          applicationDeadline: LessThan(now),
+          selectionMethod: SelectionMethod.LOTTERY,
+          lotteryRunAt: Not(IsNull()),
+        },
+        { status: BookStatus.IN_PROGRESS },
+      );
+
+      expect(bookRepo.update).toHaveBeenNthCalledWith(
+        3,
+        {
+          status: BookStatus.IN_PROGRESS,
+          reviewDeadline: LessThan(now),
+        },
+        { status: BookStatus.COMPLETED },
+      );
+    });
+
+    it('should not log transitions when no books are affected', async () => {
+      await service.handlePassedDeadlines();
+
+      expect(bookRepo.update).toHaveBeenCalledTimes(3);
+      expect(bookRepo.update).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          status: BookStatus.ACTIVE,
+          selectionMethod: Not(SelectionMethod.LOTTERY),
+        }),
+        { status: BookStatus.IN_PROGRESS },
+      );
+      expect(bookRepo.update).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          status: BookStatus.ACTIVE,
+          selectionMethod: SelectionMethod.LOTTERY,
+        }),
+        { status: BookStatus.IN_PROGRESS },
+      );
+      expect(bookRepo.update).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({ status: BookStatus.IN_PROGRESS }),
+        { status: BookStatus.COMPLETED },
+      );
     });
   });
 });

@@ -30,13 +30,9 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { BooksService } from './books.service';
 import { FilesService } from '../files/files.service';
-import {
-  JwtAuthGuard,
-  RolesGuard,
-  OptionalJwtAuthGuard,
-  ApprovedBookApplicationGuard,
-} from '../auth/guards';
+import { JwtAuthGuard, RolesGuard, OptionalJwtAuthGuard } from '../auth/guards';
 import { Roles } from '../auth/decorators';
+import { BookAuthorGuard, ApprovedBookApplicationGuard } from './guards';
 import {
   CurrentUser,
   JwtPayload,
@@ -53,6 +49,8 @@ import {
 import { Book } from './entity/book.entity';
 import { BasePaginationDto } from '../common';
 import { Paginate, PaginateQuery } from 'nestjs-paginate';
+import { ReviewsService } from '../reviews/reviews.service';
+import { FindReviewsDto } from '../reviews/dto/find-reviews.dto';
 
 @ApiTags('Books')
 @Controller('books')
@@ -60,6 +58,7 @@ export class BooksController {
   constructor(
     private readonly booksService: BooksService,
     private readonly filesService: FilesService,
+    private readonly reviewsService: ReviewsService,
   ) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -93,7 +92,7 @@ export class BooksController {
     return this.booksService.create(user.sub, user.userType as UserType, dto);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Post(':bookId/upload')
   @ApiBearerAuth()
@@ -139,7 +138,7 @@ export class BooksController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Post(':bookId/cover')
   @ApiBearerAuth()
@@ -188,7 +187,7 @@ export class BooksController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Post(':bookId/publish')
   @ApiBearerAuth()
@@ -386,7 +385,7 @@ export class BooksController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Post(':bookId/leak-fingerprint')
   @ApiBearerAuth()
@@ -427,18 +426,13 @@ export class BooksController {
     }),
   )
   async decodeLeakFingerprint(
-    @CurrentUser('sub') authorId: string,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.booksService.decodeLeakFingerprintFromUpload(
-      authorId,
-      bookId,
-      file,
-    );
+    return this.booksService.decodeLeakFingerprintFromUpload(bookId, file);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Get(':bookId/stats')
   @ApiBearerAuth()
@@ -453,10 +447,10 @@ export class BooksController {
     @CurrentUser('sub') authorId: string,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
   ) {
-    return this.booksService.stats(authorId, bookId);
+    return this.booksService.stats(bookId);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Get(':bookId/analytics')
   @ApiBearerAuth()
@@ -471,10 +465,10 @@ export class BooksController {
     @CurrentUser('sub') authorId: string,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
   ) {
-    return this.booksService.analytics(authorId, bookId);
+    return this.booksService.analytics(bookId);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Get(':bookId/analytics/detailed')
   @ApiBearerAuth()
@@ -489,32 +483,31 @@ export class BooksController {
     @CurrentUser('sub') authorId: string,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
   ) {
-    return this.booksService.analytics(authorId, bookId);
+    return this.booksService.analytics(bookId);
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get(':bookId/reviews/all')
+  @Get(':bookId/reviews')
   @ApiBearerAuth()
   @ApiOperation({
-    summary:
-      'Get reviews for a book - Authors see all reviews, Readers see only their own',
+    summary: 'Get reviews for a book (Authenticated)',
+    description:
+      'Book authors: all reviews. Other logged-in users: public reviews plus their own (including private).',
   })
-  @ApiQuery({ type: () => BasePaginationDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Paginated list of reviews (all for authors, own for readers)',
-  })
+  @ApiQuery({ type: () => FindReviewsDto })
+  @ApiResponse({ status: 200, description: 'Paginated list of reviews' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  getBookAllReviews(
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  getBookReviews(
     @CurrentUser() user: JwtPayload,
     @Param('bookId', new ParseUUIDPipe()) bookId: string,
-    @Paginate() query: PaginateQuery,
+    @Query() dto: FindReviewsDto,
   ) {
-    return this.booksService.getBookAllReviews(
-      user.sub,
-      user.userType as UserType,
+    return this.reviewsService.getBookReviews(
       bookId,
-      query,
+      dto,
+      user.sub,
+      user.userType,
     );
   }
 
@@ -534,7 +527,7 @@ export class BooksController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Patch(':bookId')
   @ApiBearerAuth()
@@ -564,7 +557,7 @@ export class BooksController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Delete(':bookId')
   @ApiBearerAuth()
@@ -587,7 +580,7 @@ export class BooksController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, BookAuthorGuard)
   @Roles(UserType.AUTHOR)
   @Delete(':bookId/cover')
   @ApiBearerAuth()

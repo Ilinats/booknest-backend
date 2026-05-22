@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, In, Not, IsNull } from 'typeorm';
+import { Repository, LessThan, Not, IsNull } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Book } from '../entity/book.entity';
-import { BookStatus } from '../enums';
+import { BookStatus, SelectionMethod } from '../enums';
 
 @Injectable()
 export class BooksSchedulerService {
@@ -16,68 +16,56 @@ export class BooksSchedulerService {
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handlePassedDeadlines(): Promise<void> {
-    this.logger.log('Checking for books with passed application deadlines...');
+    this.logger.log('Running daily book status transition check...');
 
     try {
       const now = new Date();
 
-      const booksWithPassedDeadlines = await this.bookRepo.find({
-        where: {
+      const nonLotteryActiveToInProgress = await this.bookRepo.update(
+        {
           status: BookStatus.ACTIVE,
           applicationDeadline: LessThan(now),
+          selectionMethod: Not(SelectionMethod.LOTTERY),
         },
-      });
-
-      if (booksWithPassedDeadlines.length > 0) {
-        this.logger.log(
-          `Found ${booksWithPassedDeadlines.length} book(s) with passed application deadlines. Updating to IN_PROGRESS...`,
-        );
-
-        const bookIds = booksWithPassedDeadlines.map((book) => book.id);
-        const updateResult = await this.bookRepo.update(
-          { id: In(bookIds) },
-          { status: BookStatus.IN_PROGRESS },
-        );
-
-        this.logger.log(
-          `Successfully updated ${updateResult.affected || 0} book(s) to IN_PROGRESS status.`,
-        );
-      }
-
-      this.logger.log('Checking for books with passed review deadlines...');
-
-      const booksWithPassedReviewDeadlines = await this.bookRepo.find({
-        where: {
-          status: BookStatus.IN_PROGRESS,
-          reviewDeadline: Not(IsNull()),
-        },
-      });
-
-      const booksToComplete = booksWithPassedReviewDeadlines.filter(
-        (book) => book.reviewDeadline && book.reviewDeadline < now,
+        { status: BookStatus.IN_PROGRESS },
       );
 
-      if (booksToComplete.length > 0) {
-        this.logger.log(
-          `Found ${booksToComplete.length} book(s) with passed review deadlines. Updating to COMPLETED...`,
-        );
+      const lotteryActiveToInProgress = await this.bookRepo.update(
+        {
+          status: BookStatus.ACTIVE,
+          applicationDeadline: LessThan(now),
+          selectionMethod: SelectionMethod.LOTTERY,
+          lotteryRunAt: Not(IsNull()),
+        },
+        { status: BookStatus.IN_PROGRESS },
+      );
 
-        const bookIds = booksToComplete.map((book) => book.id);
-        const updateResult = await this.bookRepo.update(
-          { id: In(bookIds) },
-          { status: BookStatus.COMPLETED },
-        );
+      const activeToInProgressAffected =
+        (nonLotteryActiveToInProgress.affected ?? 0) +
+        (lotteryActiveToInProgress.affected ?? 0);
 
+      if (activeToInProgressAffected > 0) {
         this.logger.log(
-          `Successfully updated ${updateResult.affected || 0} book(s) to COMPLETED status.`,
+          `Updated ${activeToInProgressAffected} book(s) from ACTIVE to IN_PROGRESS (application deadline passed).`,
         );
       }
 
-      if (
-        booksWithPassedDeadlines.length === 0 &&
-        booksToComplete.length === 0
-      ) {
-        this.logger.log('No books with passed deadlines found.');
+      const inProgressToCompleted = await this.bookRepo.update(
+        {
+          status: BookStatus.IN_PROGRESS,
+          reviewDeadline: LessThan(now),
+        },
+        { status: BookStatus.COMPLETED },
+      );
+
+      if (inProgressToCompleted.affected) {
+        this.logger.log(
+          `Updated ${inProgressToCompleted.affected} book(s) from IN_PROGRESS to COMPLETED (review deadline passed).`,
+        );
+      }
+
+      if (!activeToInProgressAffected && !inProgressToCompleted.affected) {
+        this.logger.log('No books required a status transition.');
       }
     } catch (error) {
       this.logger.error(

@@ -16,10 +16,18 @@ import { BooksFileService } from './services/books-file.service';
 import { BookPdfFingerprintService } from './services/book-pdf-fingerprint.service';
 import { BookEpubFingerprintService } from './services/book-epub-fingerprint.service';
 import { BooksSchedulerService } from './services/books-scheduler.service';
-import { BooksQueryHelper, BooksUpdateHelper } from './helpers';
+import {
+  BooksQueryHelper,
+  BooksUpdateHelper,
+  BooksAnalyticsBookQueriesHelper,
+  BooksAnalyticsAuthorQueriesHelper,
+} from './helpers';
 import { SeriesModule } from '../series/series.module';
 import { AuthModule } from '../auth/auth.module';
 import { FilesModule } from '../files/files.module';
+import { ReviewsModule } from '../reviews/reviews.module';
+import { BookAuthorGuard, ApprovedBookApplicationGuard } from './guards';
+import { AnalyticsCacheService } from '../common/cache/analytics-cache.service';
 
 @Module({
   imports: [
@@ -37,18 +45,29 @@ import { FilesModule } from '../files/files.module';
     SeriesModule,
     AuthModule,
     FilesModule,
+    ReviewsModule,
   ],
   providers: [
     BooksService,
     BooksQueryHelper,
     BooksUpdateHelper,
+    BooksAnalyticsBookQueriesHelper,
+    BooksAnalyticsAuthorQueriesHelper,
+    AnalyticsCacheService,
     BooksAnalyticsService,
     BooksFileService,
     BookPdfFingerprintService,
     BookEpubFingerprintService,
     BooksSchedulerService,
+    BookAuthorGuard,
+    ApprovedBookApplicationGuard,
   ],
   controllers: [BooksController],
-  exports: [BooksService, BooksAnalyticsService, BooksFileService],
+  exports: [
+    BooksService,
+    BooksAnalyticsService,
+    BooksAnalyticsAuthorQueriesHelper,
+    BooksFileService,
+  ],
 })
 export class BooksModule {}

@@ -8,14 +8,14 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
+import { Book } from '../books/entity/book.entity';
 import { Review } from './entity/review.entity';
 import { Application } from '../applications/entity/application.entity';
-import { Book } from '../books/entity/book.entity';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { FindReviewsDto } from './dto/find-reviews.dto';
-import { createPaginatedResponse } from '../common';
+import { createPaginatedResponse, sanitizeBookForUser } from '../common';
 import { ReadingStatus, ApplicationStatus } from '../applications/enums';
 import { UserType } from '../users/enums';
 import { ReviewErrorCode } from './errors';
@@ -79,12 +79,7 @@ export class ReviewsService {
 
     const savedReview = await this.reviewRepo.save(review);
 
-    application.reviewSubmittedAt = new Date();
-    application.readingStatus = ReadingStatus.REVIEWED;
-    if (!application.readingCompletedAt) {
-      application.readingCompletedAt = new Date();
-    }
-    await this.applicationRepo.save(application);
+    await this.markApplicationReviewed(application);
 
     if (this.userActivityService) {
       try {
@@ -120,26 +115,21 @@ export class ReviewsService {
     });
 
     if (review?.application?.book) {
-      review.application.book = this.sanitizeBookFiles(review.application.book);
+      review.application.book = this.sanitizeBookInReviewContext(
+        review.application.book,
+      );
     }
 
     return review;
   }
 
   async findOne(reviewId: string, userId?: string): Promise<Review> {
-    const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
-      relations: [
-        'application',
-        'application.reader',
-        'application.book',
-        'application.book.author',
-      ],
-    });
-
-    if (!review) {
-      throw new NotFoundException(ReviewErrorCode.REVIEW_NOT_FOUND);
-    }
+    const review = await this.findReviewOrThrow(reviewId, [
+      'application',
+      'application.reader',
+      'application.book',
+      'application.book.author',
+    ]);
 
     const isReader = userId && review.application.readerId === userId;
     const isAuthor = userId && review.application.book.authorId === userId;
@@ -150,7 +140,9 @@ export class ReviewsService {
     }
 
     if (!isAuthor && review.application.book) {
-      review.application.book = this.sanitizeBookFiles(review.application.book);
+      review.application.book = this.sanitizeBookInReviewContext(
+        review.application.book,
+      );
     }
 
     return review;
@@ -162,14 +154,10 @@ export class ReviewsService {
     userType: UserType | undefined,
     dto: UpdateReviewDto,
   ): Promise<Review> {
-    const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
-      relations: ['application', 'application.book'],
-    });
-
-    if (!review) {
-      throw new NotFoundException(ReviewErrorCode.REVIEW_NOT_FOUND);
-    }
+    const review = await this.findReviewOrThrow(reviewId, [
+      'application',
+      'application.book',
+    ]);
 
     const isReader = review.application.readerId === userId;
 
@@ -201,62 +189,31 @@ export class ReviewsService {
   }
 
   async remove(reviewId: string, readerId: string): Promise<void> {
-    const review = await this.reviewRepo.findOne({
-      where: { id: reviewId },
-      relations: ['application'],
-    });
+    const review = await this.findReviewOrThrow(reviewId, ['application']);
 
-    if (!review) {
-      throw new NotFoundException(ReviewErrorCode.REVIEW_NOT_FOUND);
-    }
-
-    if (review.application.readerId !== readerId) {
-      throw new ForbiddenException(ReviewErrorCode.ACCESS_DENIED);
-    }
+    this.assertReviewReader(review, readerId);
 
     await this.reviewRepo.remove(review);
-
-    const application = review.application;
-    application.reviewSubmittedAt = null;
-    application.readingStatus = ReadingStatus.FOR_REVIEW;
-    application.status = ApplicationStatus.APPROVED;
-    await this.applicationRepo.save(application);
+    await this.clearApplicationAfterReviewRemoved(review.application);
   }
 
   async getBookReviews(
     bookId: string,
     dto: FindReviewsDto,
-    userId?: string,
+    userId: string,
     userType?: UserType,
   ) {
-    let isAuthor = false;
-    if (userType === UserType.AUTHOR && userId) {
-      const book = await this.bookRepo.findOne({
-        where: { id: bookId, authorId: userId },
-      });
-      isAuthor = book !== null;
-    }
-
+    const isAuthor = await this.isBookAuthor(bookId, userId, userType);
     const skip = dto.skip ?? 0;
     const take = dto.take ?? 20;
-    const includePrivate = dto.includePrivate ?? false;
 
-    const query = this.reviewRepo
-      .createQueryBuilder('review')
-      .leftJoinAndSelect('review.application', 'application')
+    const query = this.buildReviewsQuery()
       .leftJoinAndSelect('application.reader', 'reader')
       .where('application.bookId = :bookId', { bookId });
 
-    if (!isAuthor && !includePrivate) {
-      query.andWhere('review.isPublic = :isPublic', { isPublic: true });
-    }
+    this.applyBookReviewsVisibilityFilter(query, isAuthor, userId);
 
-    query.orderBy('review.createdAt', 'DESC');
-
-    const [reviews, total] = await query
-      .skip(skip)
-      .take(take)
-      .getManyAndCount();
+    const [reviews, total] = await this.paginateReviews(query, skip, take);
 
     const sanitizedReviews = reviews.map((review) =>
       this.sanitizeReviewBookForUser(review, userId, userType),
@@ -273,9 +230,7 @@ export class ReviewsService {
     const take = dto.take ?? 20;
     const includePrivate = dto.includePrivate ?? true;
 
-    const query = this.reviewRepo
-      .createQueryBuilder('review')
-      .leftJoinAndSelect('review.application', 'application')
+    const query = this.buildReviewsQuery()
       .leftJoinAndSelect('application.book', 'book')
       .where('application.readerId = :userId', { userId });
 
@@ -283,12 +238,7 @@ export class ReviewsService {
       query.andWhere('review.isPublic = :isPublic', { isPublic: true });
     }
 
-    query.orderBy('review.createdAt', 'DESC');
-
-    const [reviews, total] = await query
-      .skip(skip)
-      .take(take)
-      .getManyAndCount();
+    const [reviews, total] = await this.paginateReviews(query, skip, take);
 
     const sanitizedReviews = reviews.map((review) =>
       this.sanitizeReviewBook(review),
@@ -312,6 +262,94 @@ export class ReviewsService {
       .getMany();
   }
 
+  private async isBookAuthor(
+    bookId: string,
+    userId?: string,
+    userType?: UserType,
+  ): Promise<boolean> {
+    if (userType !== UserType.AUTHOR || !userId) {
+      return false;
+    }
+
+    const book = await this.bookRepo.findOne({
+      where: { id: bookId, authorId: userId },
+    });
+
+    return book !== null;
+  }
+
+  private applyBookReviewsVisibilityFilter(
+    query: SelectQueryBuilder<Review>,
+    isAuthor: boolean,
+    userId: string,
+  ): void {
+    if (isAuthor) {
+      return;
+    }
+
+    query.andWhere(
+      '(review.isPublic = :isPublic OR application.readerId = :userId)',
+      { isPublic: true, userId },
+    );
+  }
+
+  private async findReviewOrThrow(
+    reviewId: string,
+    relations: string[],
+  ): Promise<Review> {
+    const review = await this.reviewRepo.findOne({
+      where: { id: reviewId },
+      relations,
+    });
+
+    if (!review) {
+      throw new NotFoundException(ReviewErrorCode.REVIEW_NOT_FOUND);
+    }
+
+    return review;
+  }
+
+  private assertReviewReader(review: Review, readerId: string): void {
+    if (review.application.readerId !== readerId) {
+      throw new ForbiddenException(ReviewErrorCode.ACCESS_DENIED);
+    }
+  }
+
+  private async markApplicationReviewed(
+    application: Application,
+  ): Promise<void> {
+    application.reviewSubmittedAt = new Date();
+    application.readingStatus = ReadingStatus.REVIEWED;
+    if (!application.readingCompletedAt) {
+      application.readingCompletedAt = new Date();
+    }
+    await this.applicationRepo.save(application);
+  }
+
+  private async clearApplicationAfterReviewRemoved(
+    application: Application,
+  ): Promise<void> {
+    application.reviewSubmittedAt = null;
+    application.readingStatus = ReadingStatus.FOR_REVIEW;
+    application.status = ApplicationStatus.APPROVED;
+    await this.applicationRepo.save(application);
+  }
+
+  private buildReviewsQuery(): SelectQueryBuilder<Review> {
+    return this.reviewRepo
+      .createQueryBuilder('review')
+      .leftJoinAndSelect('review.application', 'application')
+      .orderBy('review.createdAt', 'DESC');
+  }
+
+  private async paginateReviews(
+    query: SelectQueryBuilder<Review>,
+    skip: number,
+    take: number,
+  ): Promise<[Review[], number]> {
+    return query.skip(skip).take(take).getManyAndCount();
+  }
+
   private calculateWordCount(
     reviewType: ReviewType,
     reviewContent?: string,
@@ -327,15 +365,19 @@ export class ReviewsService {
     return null;
   }
 
-  private sanitizeBookFiles(book: Book): Book {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { fileUrl, fileSize, fileType, ...safeBook } = book;
-    return safeBook as Book;
+  private sanitizeBookInReviewContext(
+    book: Book,
+    userId?: string,
+    userType?: UserType,
+  ): Book {
+    return sanitizeBookForUser(book, userId, userType, false);
   }
 
   private sanitizeReviewBook(review: Review): Review {
     if (review.application?.book) {
-      review.application.book = this.sanitizeBookFiles(review.application.book);
+      review.application.book = this.sanitizeBookInReviewContext(
+        review.application.book,
+      );
     }
 
     return review;
@@ -350,15 +392,11 @@ export class ReviewsService {
       return review;
     }
 
-    const bookAuthorId = review.application.book.authorId;
-    const isAuthor =
-      Boolean(userId) &&
-      userType === UserType.AUTHOR &&
-      bookAuthorId === userId;
-
-    if (!isAuthor) {
-      review.application.book = this.sanitizeBookFiles(review.application.book);
-    }
+    review.application.book = this.sanitizeBookInReviewContext(
+      review.application.book,
+      userId,
+      userType,
+    );
 
     return review;
   }

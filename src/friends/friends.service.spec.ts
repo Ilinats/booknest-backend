@@ -9,15 +9,17 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  FriendStatus,
-  FriendRequestType,
-  FriendsListSortBy,
-} from './enums';
+import { FriendStatus, FriendRequestType, FriendsListSortBy } from './enums';
 import { UserType } from '../users/enums';
 import { FriendErrorCode } from './errors';
 import { sanitizeUserPublic } from '../common/utils/user-sanitizer.util';
 import { UserActivityService } from '../user-activity/user-activity.service';
+import {
+  FriendsListHelper,
+  FriendsNotificationsHelper,
+  FriendsQueryHelper,
+  FriendsSearchHelper,
+} from './helpers';
 
 jest.mock('../common/utils/user-sanitizer.util', () => ({
   sanitizeUserPublic: jest.fn((u) => u),
@@ -61,6 +63,10 @@ describe('FriendsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FriendsService,
+        FriendsQueryHelper,
+        FriendsListHelper,
+        FriendsSearchHelper,
+        FriendsNotificationsHelper,
         {
           provide: getRepositoryToken(Friend),
           useValue: createMockRepo(),
@@ -259,56 +265,27 @@ describe('FriendsService', () => {
     });
   });
 
-  describe('getFriends', () => {
-    it('should call repository with correct filter', async () => {
-      const friends: Friend[] = [
-        {
-          id: 'friend-1',
-          requesterId: 'user-1',
-          addresseeId: 'user-2',
-          status: FriendStatus.ACCEPTED,
-        } as any,
-      ];
-
-      friendRepository.find.mockResolvedValue(friends);
-
-      const result = await service.getFriends('user-1');
-
-      expect(friendRepository.find).toHaveBeenCalledWith({
-        where: [
-          { requesterId: 'user-1', status: FriendStatus.ACCEPTED },
-          { addresseeId: 'user-1', status: FriendStatus.ACCEPTED },
-        ],
-        relations: ['requester', 'addressee'],
-        order: { createdAt: 'DESC' },
-      });
-      expect(result).toEqual(friends);
-    });
-  });
-
-  describe('getFriendRequests', () => {
+  describe('getPendingFriendRequests', () => {
     it('should get received requests by default', async () => {
-      const friends: Friend[] = [] as any;
-      friendRepository.find.mockResolvedValue(friends);
+      friendRepository.find.mockResolvedValue([]);
 
-      await service.getFriendRequests('user-1');
+      await service.getPendingFriendRequests('user-1');
 
       expect(friendRepository.find).toHaveBeenCalledWith({
         where: { addresseeId: 'user-1', status: FriendStatus.PENDING },
-        relations: ['requester', 'addressee'],
+        relations: ['requester'],
         order: { createdAt: 'DESC' },
       });
     });
 
     it('should get sent requests when type is sent', async () => {
-      const friends: Friend[] = [] as any;
-      friendRepository.find.mockResolvedValue(friends);
+      friendRepository.find.mockResolvedValue([]);
 
-      await service.getFriendRequests('user-1', FriendRequestType.SENT);
+      await service.getPendingFriendRequests('user-1', FriendRequestType.SENT);
 
       expect(friendRepository.find).toHaveBeenCalledWith({
         where: { requesterId: 'user-1', status: FriendStatus.PENDING },
-        relations: ['requester', 'addressee'],
+        relations: ['addressee'],
         order: { createdAt: 'DESC' },
       });
     });
@@ -475,48 +452,6 @@ describe('FriendsService', () => {
       );
 
       expect(result.map((u) => u.id)).toEqual(['user-3', 'user-2']);
-    });
-  });
-
-  describe('getSentRequestsList', () => {
-    it('should return sanitized addressees', async () => {
-      const friendships: Friend[] = [
-        {
-          id: '1',
-          requesterId: 'user-1',
-          addresseeId: 'user-2',
-          status: FriendStatus.PENDING,
-          addressee: { id: 'user-2' } as any,
-        } as any,
-      ];
-
-      friendRepository.find.mockResolvedValue(friendships);
-
-      const result = await service.getSentRequestsList('user-1');
-
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('user-2');
-    });
-  });
-
-  describe('getReceivedRequestsList', () => {
-    it('should return sanitized requesters', async () => {
-      const friendships: Friend[] = [
-        {
-          id: '1',
-          requesterId: 'user-2',
-          addresseeId: 'user-1',
-          status: FriendStatus.PENDING,
-          requester: { id: 'user-2' } as any,
-        } as any,
-      ];
-
-      friendRepository.find.mockResolvedValue(friendships);
-
-      const result = await service.getReceivedRequestsList('user-1');
-
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('user-2');
     });
   });
 

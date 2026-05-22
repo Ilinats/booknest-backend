@@ -436,7 +436,7 @@ describe('ReviewsService', () => {
   });
 
   describe('getBookReviews', () => {
-    it('should filter private reviews for non-author by default', async () => {
+    it('should return public reviews and the reader own review for non-authors', async () => {
       const qbMock: any = {
         leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -459,9 +459,10 @@ describe('ReviewsService', () => {
       );
 
       expect(qbMock.andWhere).toHaveBeenCalledWith(
-        'review.isPublic = :isPublic',
+        '(review.isPublic = :isPublic OR application.readerId = :userId)',
         {
           isPublic: true,
+          userId: 'user-1',
         },
       );
       expect(result.data).toEqual([]);
@@ -544,7 +545,7 @@ describe('ReviewsService', () => {
       reviewRepo.createQueryBuilder.mockReturnValue(qbMock);
       bookRepo.findOne.mockResolvedValue(null);
 
-      const dto: FindReviewsDto = { skip: 0, take: 10, includePrivate: true };
+      const dto: FindReviewsDto = { skip: 0, take: 10 };
       const result = await service.getBookReviews(
         'book-1',
         dto,

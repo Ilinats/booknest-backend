@@ -117,6 +117,13 @@ export class Book {
   @Column({ name: 'published_at', type: 'timestamp', nullable: true })
   publishedAt?: Date | null;
 
+  @Column({
+    name: 'lottery_run_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  lotteryRunAt?: Date | null;
+
   @ManyToOne(() => Series, (series) => series.books, {
     onDelete: 'SET NULL',
     nullable: true,

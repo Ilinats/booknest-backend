@@ -25,6 +25,7 @@ import {
 import { ApplicationErrors } from './errors';
 import { ForbiddenException } from '@nestjs/common';
 import { PaginateQuery } from 'nestjs-paginate';
+import { DataSource } from 'typeorm';
 
 const mockPaginate = jest.fn();
 jest.mock('nestjs-paginate', () => ({
@@ -58,11 +59,41 @@ describe('ApplicationsService (minimal)', () => {
     notifyApplicationApproved: jest.Mock;
   };
   let userActivityService: jest.Mocked<UserActivityService>;
+  let transactionManager: {
+    findOne: jest.Mock;
+    find: jest.Mock;
+    save: jest.Mock;
+    update: jest.Mock;
+    getRepository: jest.Mock;
+  };
 
   beforeEach(async () => {
+    transactionManager = {
+      findOne: jest.fn(),
+      find: jest.fn(),
+      save: jest.fn(),
+      update: jest.fn(),
+      getRepository: jest.fn((entity) => {
+        if (entity === Book) {
+          return bookRepo;
+        }
+        if (entity === Application) {
+          return applicationRepo;
+        }
+        return createMockRepo();
+      }),
+    };
+
+    const dataSource = {
+      transaction: jest.fn(async (cb: (manager: typeof transactionManager) => unknown) =>
+        cb(transactionManager),
+      ),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ApplicationsService,
+        { provide: DataSource, useValue: dataSource },
         {
           provide: getRepositoryToken(Application),
           useValue: createMockRepo(),
@@ -110,10 +141,9 @@ describe('ApplicationsService (minimal)', () => {
     notificationService = module.get('NotificationService');
     userActivityService = module.get(UserActivityService);
 
-    // Avoid hitting real Book helper logic that expects full TypeORM repos
     jest
-      .spyOn(ApplicationBookHelper, 'decrementAvailableCopies')
-      .mockResolvedValue(undefined as any);
+      .spyOn(ApplicationBookHelper, 'tryReserveCopies')
+      .mockResolvedValue(true);
     jest
       .spyOn(ApplicationBookHelper, 'shouldSetCopySentAt')
       .mockReturnValue(false);
@@ -210,10 +240,8 @@ describe('ApplicationsService (minimal)', () => {
         selectionMethod: SelectionMethod.FIRST_COME,
         distributionType: DistributionType.DIGITAL,
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-
       applicationRepo.findOne
-        .mockResolvedValueOnce(null) // existing application check
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           id: 'app-1',
           readerId: 'reader-1',
@@ -222,7 +250,8 @@ describe('ApplicationsService (minimal)', () => {
           book,
         } as any);
 
-      applicationRepo.save.mockImplementation(async (data: any) => ({
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.save.mockImplementation(async (_entity, data: any) => ({
         ...data,
         id: 'app-1',
       }));
@@ -235,7 +264,7 @@ describe('ApplicationsService (minimal)', () => {
       const result = await service.create('reader-1', dto);
 
       expect(result.id).toBe('app-1');
-      expect(applicationRepo.save).toHaveBeenCalled();
+      expect(transactionManager.save).toHaveBeenCalled();
       expect(userActivityService.logBookApplied).toHaveBeenCalledWith(
         'reader-1',
         'book-1',
@@ -412,8 +441,6 @@ describe('ApplicationsService (minimal)', () => {
         distributionType: DistributionType.DIGITAL,
         title: 'Title',
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-
       const apps: Application[] = [
         {
           id: 'a1',
@@ -428,8 +455,9 @@ describe('ApplicationsService (minimal)', () => {
           status: ApplicationStatus.PENDING,
         } as any,
       ];
-      applicationRepo.find.mockResolvedValue(apps);
-      applicationRepo.save.mockImplementation(async (a: any) => a);
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.find.mockResolvedValue(apps);
+      transactionManager.save.mockImplementation(async (_entity, a: any) => a);
 
       const dto = {
         applicationIds: ['a1', 'a2'],
@@ -459,15 +487,15 @@ describe('ApplicationsService (minimal)', () => {
         distributionType: DistributionType.DIGITAL,
         title: 'Title',
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
       jest.spyOn(ApplicationBookHelper, 'shouldSetCopySentAt').mockReturnValue(true);
 
       const apps: Application[] = [
         { id: 'a1', readerId: 'r1', bookId: 'book-1', status: ApplicationStatus.PENDING, copySentAt: null } as any,
         { id: 'a2', readerId: 'r2', bookId: 'book-1', status: ApplicationStatus.PENDING, copySentAt: null } as any,
       ];
-      applicationRepo.find.mockResolvedValue(apps);
-      applicationRepo.save.mockImplementation(async (arr: any) => arr);
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.find.mockResolvedValue(apps);
+      transactionManager.save.mockImplementation(async (_entity, arr: any) => arr);
 
       await service.bulkUpdateApplicationStatus(
         'book-1',
@@ -524,8 +552,8 @@ describe('ApplicationsService (minimal)', () => {
         selectionMethod: SelectionMethod.LOTTERY,
         applicationDeadline: new Date(Date.now() - 60_000),
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.find.mockResolvedValue([]);
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.find.mockResolvedValue([]);
 
       const result = await service.runLotterySelection('book-1', 'author-1');
 
@@ -541,7 +569,7 @@ describe('ApplicationsService (minimal)', () => {
         selectionMethod: SelectionMethod.AUTHOR_SELECTS,
         applicationDeadline: new Date(Date.now() - 60_000),
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
+      transactionManager.findOne.mockResolvedValue(book);
 
       await expect(
         service.runLotterySelection('book-1', 'author-1'),
@@ -555,7 +583,7 @@ describe('ApplicationsService (minimal)', () => {
         selectionMethod: SelectionMethod.LOTTERY,
         applicationDeadline: new Date(Date.now() + 86400000),
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
+      transactionManager.findOne.mockResolvedValue(book);
 
       await expect(
         service.runLotterySelection('book-1', 'author-1'),
@@ -569,12 +597,9 @@ describe('ApplicationsService (minimal)', () => {
         selectionMethod: SelectionMethod.LOTTERY,
         applicationDeadline: new Date(Date.now() - 60_000),
         availableCopies: 2,
+        lotteryRunAt: new Date(),
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.find.mockResolvedValue([
-        { id: 'a1', bookId: 'book-1', status: ApplicationStatus.PENDING } as any,
-      ]);
-      applicationRepo.count.mockResolvedValue(1);
+      transactionManager.findOne.mockResolvedValue(book);
 
       await expect(
         service.runLotterySelection('book-1', 'author-1'),
@@ -591,13 +616,13 @@ describe('ApplicationsService (minimal)', () => {
         applicationDeadline: new Date(Date.now() - 60_000),
         distributionType: DistributionType.PHYSICAL,
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
       const pending = [
         { id: 'a1', bookId: 'book-1', status: ApplicationStatus.PENDING, readerId: 'r1', book } as any,
         { id: 'a2', bookId: 'book-1', status: ApplicationStatus.PENDING, readerId: 'r2', book } as any,
       ];
-      applicationRepo.find.mockResolvedValue(pending);
-      applicationRepo.count.mockResolvedValue(0);
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.find.mockResolvedValue(pending);
+      transactionManager.save.mockImplementation(async (_entity, data) => data);
       applicationRepo.update.mockResolvedValue({});
 
       const result = await service.runLotterySelection('book-1', 'author-1');
@@ -618,13 +643,13 @@ describe('ApplicationsService (minimal)', () => {
         applicationDeadline: new Date(Date.now() - 60_000),
         distributionType: DistributionType.DIGITAL,
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
       const pending = [
         { id: 'a1', bookId: 'book-1', status: ApplicationStatus.PENDING, readerId: 'r1', book } as any,
         { id: 'a2', bookId: 'book-1', status: ApplicationStatus.PENDING, readerId: 'r2', book } as any,
       ];
-      applicationRepo.find.mockResolvedValue(pending);
-      applicationRepo.count.mockResolvedValue(0);
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.find.mockResolvedValue(pending);
+      transactionManager.save.mockImplementation(async (_entity, data) => data);
       jest.spyOn(ApplicationBookHelper, 'shouldSetCopySentAt').mockReturnValue(true);
 
       const updateCalls: Array<{ copySentAt?: Date }> = [];
@@ -790,15 +815,35 @@ describe('ApplicationsService (minimal)', () => {
     });
 
     it('allows author to update status to APPROVED and sets copySentAt for digital', async () => {
+      const book = {
+        id: 'book-1',
+        authorId: 'author-1',
+        title: 'Book',
+        distributionType: DistributionType.DIGITAL,
+        selectionMethod: SelectionMethod.AUTHOR_SELECTS,
+        availableCopies: 1,
+      } as any;
       const app: Application = {
         id: 'app-1',
         readerId: 'reader-1',
         bookId: 'book-1',
         status: ApplicationStatus.PENDING,
-        book: { id: 'book-1', authorId: 'author-1', distributionType: DistributionType.DIGITAL } as any,
+        book,
       } as any;
-      applicationRepo.findOne.mockResolvedValue(app);
-      applicationRepo.save.mockImplementation(async (a: any) => a);
+      const approvedApp: Application = {
+        ...app,
+        status: ApplicationStatus.APPROVED,
+        copySentAt: new Date(),
+        respondedAt: new Date(),
+      } as any;
+      applicationRepo.findOne
+        .mockResolvedValueOnce(app)
+        .mockResolvedValueOnce(approvedApp);
+      transactionManager.findOne
+        .mockResolvedValueOnce({ ...app, bookId: 'book-1' })
+        .mockResolvedValueOnce(book);
+      transactionManager.save.mockImplementation(async (_entity, a: any) => a);
+      applicationRepo.save.mockResolvedValue(approvedApp);
       jest.spyOn(ApplicationBookHelper, 'shouldSetCopySentAt').mockReturnValue(true);
 
       const result = await service.update(
@@ -810,6 +855,46 @@ describe('ApplicationsService (minimal)', () => {
 
       expect(result.status).toBe(ApplicationStatus.APPROVED);
       expect(result.copySentAt).toBeInstanceOf(Date);
+      expect(notificationService.notifyApplicationApproved).toHaveBeenCalled();
+    });
+
+    it('rejects application via update and sends notification', async () => {
+      const book = {
+        id: 'book-1',
+        authorId: 'author-1',
+        title: 'Book',
+        selectionMethod: SelectionMethod.AUTHOR_SELECTS,
+      } as any;
+      const app: Application = {
+        id: 'app-1',
+        readerId: 'reader-1',
+        bookId: 'book-1',
+        status: ApplicationStatus.PENDING,
+        book,
+      } as any;
+      const rejectedApp: Application = {
+        ...app,
+        status: ApplicationStatus.REJECTED,
+        respondedAt: new Date(),
+      } as any;
+      applicationRepo.findOne
+        .mockResolvedValueOnce(app)
+        .mockResolvedValueOnce(rejectedApp);
+      transactionManager.findOne
+        .mockResolvedValueOnce({ ...app, bookId: 'book-1' })
+        .mockResolvedValueOnce(book);
+      transactionManager.save.mockImplementation(async (_entity, a: any) => a);
+      applicationRepo.save.mockResolvedValue(rejectedApp);
+
+      const result = await service.update(
+        'app-1',
+        'author-1',
+        UserType.AUTHOR,
+        { status: ApplicationStatus.REJECTED } as any,
+      );
+
+      expect(result.status).toBe(ApplicationStatus.REJECTED);
+      expect(notificationService.notifyApplicationRejected).toHaveBeenCalled();
     });
 
     it('allows reader to update readingStatus to CURRENTLY_READING', async () => {
@@ -900,55 +985,6 @@ describe('ApplicationsService (minimal)', () => {
     });
   });
 
-  describe('updateApplicationStatus', () => {
-    it('rejects application and sends notification', async () => {
-      const app: Application = {
-        id: 'app-1',
-        readerId: 'reader-1',
-        bookId: 'book-1',
-        status: ApplicationStatus.PENDING,
-        book: { id: 'book-1', authorId: 'author-1', title: 'Book' } as any,
-      } as any;
-      applicationRepo.findOne.mockResolvedValue(app);
-      applicationRepo.save.mockImplementation(async (a: any) => a);
-
-      const result = await service.updateApplicationStatus(
-        'app-1',
-        'author-1',
-        UserType.AUTHOR,
-        { status: ApplicationStatus.REJECTED } as any,
-      );
-
-      expect(result.status).toBe(ApplicationStatus.REJECTED);
-      expect(notificationService.notifyApplicationRejected).toHaveBeenCalled();
-    });
-
-    it('approves and sets copySentAt when book is digital', async () => {
-      const app: Application = {
-        id: 'app-1',
-        readerId: 'reader-1',
-        bookId: 'book-1',
-        status: ApplicationStatus.PENDING,
-        copySentAt: null,
-        book: { id: 'book-1', authorId: 'author-1', title: 'Book', distributionType: DistributionType.DIGITAL } as any,
-      } as any;
-      applicationRepo.findOne.mockResolvedValue(app);
-      applicationRepo.save.mockImplementation(async (a: any) => a);
-      jest.spyOn(ApplicationBookHelper, 'shouldSetCopySentAt').mockReturnValue(true);
-
-      const result = await service.updateApplicationStatus(
-        'app-1',
-        'author-1',
-        UserType.AUTHOR,
-        { status: ApplicationStatus.APPROVED } as any,
-      );
-
-      expect(result.status).toBe(ApplicationStatus.APPROVED);
-      expect(result.copySentAt).toBeInstanceOf(Date);
-      expect(notificationService.notifyApplicationApproved).toHaveBeenCalled();
-    });
-  });
-
   describe('withdrawApplication', () => {
     it('sets status to WITHDRAWN when application is PENDING', async () => {
       const app: Application = {
@@ -984,7 +1020,6 @@ describe('ApplicationsService (minimal)', () => {
         selectionMethod: SelectionMethod.AUTHOR_SELECTS,
         distributionType: DistributionType.PHYSICAL,
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
       applicationRepo.findOne
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
@@ -994,7 +1029,8 @@ describe('ApplicationsService (minimal)', () => {
           status: ApplicationStatus.PENDING,
           book,
         } as any);
-      applicationRepo.save.mockImplementation(async (data: any) => ({
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.save.mockImplementation(async (_entity, data: any) => ({
         ...data,
         id: 'app-1',
         status: data.status,
@@ -1003,7 +1039,8 @@ describe('ApplicationsService (minimal)', () => {
       const result = await service.create('reader-1', { bookId: 'book-1' } as any);
 
       expect(result.status).toBe(ApplicationStatus.PENDING);
-      expect(applicationRepo.save).toHaveBeenCalledWith(
+      expect(transactionManager.save).toHaveBeenCalledWith(
+        Application,
         expect.objectContaining({
           status: ApplicationStatus.PENDING,
           respondedAt: null,
@@ -1029,7 +1066,6 @@ describe('ApplicationsService (minimal)', () => {
         selectionMethod: SelectionMethod.AUTHOR_SELECTS,
         distributionType: DistributionType.PHYSICAL,
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
       applicationRepo.findOne
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
@@ -1039,7 +1075,8 @@ describe('ApplicationsService (minimal)', () => {
           status: ApplicationStatus.PENDING,
           book,
         } as any);
-      applicationRepo.save.mockImplementation(async (data: any) => ({
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.save.mockImplementation(async (_entity, data: any) => ({
         ...data,
         id: 'app-1',
       }));
@@ -1053,9 +1090,6 @@ describe('ApplicationsService (minimal)', () => {
 
   describe('bulkUpdateApplicationStatus', () => {
     it('throws when applicationIds empty or missing', async () => {
-      const book: Book = { id: 'book-1', authorId: 'author-1', selectionMethod: SelectionMethod.AUTHOR_SELECTS } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-
       await expect(
         service.bulkUpdateApplicationStatus('book-1', 'author-1', UserType.AUTHOR, {
           applicationIds: [],
@@ -1069,7 +1103,7 @@ describe('ApplicationsService (minimal)', () => {
         authorId: 'author-1',
         selectionMethod: SelectionMethod.LOTTERY,
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
+      transactionManager.findOne.mockResolvedValue(book);
 
       await expect(
         service.bulkUpdateApplicationStatus('book-1', 'author-1', UserType.AUTHOR, {
@@ -1084,8 +1118,8 @@ describe('ApplicationsService (minimal)', () => {
         authorId: 'author-1',
         selectionMethod: SelectionMethod.AUTHOR_SELECTS,
       } as any;
-      bookRepo.findOne.mockResolvedValue(book);
-      applicationRepo.find.mockResolvedValue([]);
+      transactionManager.findOne.mockResolvedValue(book);
+      transactionManager.find.mockResolvedValue([]);
 
       await expect(
         service.bulkUpdateApplicationStatus('book-1', 'author-1', UserType.AUTHOR, {

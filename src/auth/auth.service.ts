@@ -1,9 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
-  UnauthorizedException,
-  NotFoundException,
   Logger,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -22,19 +23,18 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { User } from '../users/entity/user.entity';
 import * as argon2 from 'argon2';
-import { RefreshToken } from './entity/refresh-token.entity';
 import { UserAddressService } from '../user-address/user-address.service';
 import { VerificationCodeService } from './services/verification-code.service';
-import { jwtExpiresIn } from './jwt-expires-in.util';
+import { RefreshTokenStoreService } from './services/refresh-token-store.service';
+import { getRefreshJwtSecret, jwtExpiresIn } from './jwt-expires-in.util';
 import { sanitizeUser } from '../common/utils/user-sanitizer.util';
 import { UserResponseDto } from '../users/dto';
 import { AuthErrors } from './errors/auth-errors';
 import { UserType } from '../users/enums';
 import { VerificationTypeEnum } from './enums';
-import { ConflictException } from '@nestjs/common';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ms = require('ms') as (value: string) => number;
@@ -50,8 +50,7 @@ export class AuthService {
     private readonly verificationCodeService: VerificationCodeService,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
-    @InjectRepository(RefreshToken)
-    private readonly refreshTokenRepository: Repository<RefreshToken>,
+    private readonly refreshTokenStore: RefreshTokenStoreService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -70,7 +69,12 @@ export class AuthService {
       await this.userAddressService.create(savedUser.id, dto.address);
     }
 
-    await this.sendVerificationCode(savedUser);
+    try {
+      await this.sendEmailVerificationToUser(savedUser);
+    } catch (error) {
+      this.logger.warn('Failed to send verification email:', error);
+    }
+
     return this.generateTokens(savedUser);
   }
 
@@ -86,14 +90,17 @@ export class AuthService {
 
   async logout(refreshToken: string): Promise<LogoutResponseDto> {
     const tokenHash = this.hashToken(refreshToken);
-    await this.refreshTokenRepository.delete({ tokenHash });
+    await this.refreshTokenStore.revoke(tokenHash);
     return { message: 'Logged out' };
   }
 
+  async logoutAll(userId: string): Promise<LogoutResponseDto> {
+    await this.refreshTokenStore.revokeAllForUser(userId);
+    return { message: 'Logged out from all devices' };
+  }
+
   async refresh(dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
-    const refreshSecret =
-      this.configService.get<string>('JWT_REFRESH_SECRET') ||
-      `${this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me'}_refresh`;
+    const refreshSecret = getRefreshJwtSecret(this.configService);
     let payload: {
       sub: string;
       username?: string;
@@ -113,11 +120,9 @@ export class AuthService {
     }
 
     const tokenHash = this.hashToken(dto.refreshToken);
-    const token = await this.refreshTokenRepository.findOne({
-      where: { tokenHash },
-    });
+    const storedUserId = await this.refreshTokenStore.getUserId(tokenHash);
 
-    if (!token || token.expiresAt.getTime() < Date.now()) {
+    if (!storedUserId || storedUserId !== payload.sub) {
       throw new UnauthorizedException(AuthErrors.INVALID_REFRESH_TOKEN);
     }
 
@@ -126,30 +131,23 @@ export class AuthService {
       throw new NotFoundException(AuthErrors.USER_NOT_FOUND);
     }
 
-    await this.refreshTokenRepository.delete({ id: token.id });
+    await this.refreshTokenStore.revoke(tokenHash);
     return this.generateTokens(user);
   }
 
   async verifyEmailWithCode(
     dto: VerifyEmailDto,
   ): Promise<{ message: string; user: UserResponseDto }> {
-    const result = await this.verificationCodeService.verifyCode(
+    const user = await this.verifyCodeForUser(
       dto.code,
       VerificationTypeEnum.EMAIL_VERIFICATION,
     );
 
-    if (!result.isValid || !result.user) {
-      throw new UnauthorizedException(AuthErrors.INVALID_VERIFICATION_CODE);
-    }
-
-    await this.usersRepository.update(
-      { id: result.user.id },
-      { emailVerified: true },
-    );
+    await this.usersRepository.update({ id: user.id }, { emailVerified: true });
 
     return {
       message: 'Email verified successfully',
-      user: sanitizeUser(result.user),
+      user: sanitizeUser(user),
     };
   }
 
@@ -157,14 +155,14 @@ export class AuthService {
     dto: RequestPasswordResetDto,
   ): Promise<{ message: string }> {
     const user = await this.usersRepository.findOne({
-      where: { email: dto.email },
+      where: { email: dto.email.toLowerCase() },
     });
 
+    const message =
+      'If an account with that email exists, a password reset code has been sent';
+
     if (!user) {
-      return {
-        message:
-          'If an account with that email exists, a password reset code has been sent',
-      };
+      return { message };
     }
 
     const verificationCode =
@@ -178,32 +176,27 @@ export class AuthService {
       verificationCode.code,
     );
 
-    return {
-      message:
-        'If an account with that email exists, a password reset code has been sent',
-    };
+    return { message };
   }
 
   async resetPasswordWithCode(
     dto: ResetPasswordDto,
   ): Promise<{ message: string }> {
-    const result = await this.verificationCodeService.verifyCode(
+    const user = await this.verifyCodeForUser(
       dto.code,
       VerificationTypeEnum.PASSWORD_RESET,
     );
 
-    if (!result.isValid || !result.user) {
-      throw new UnauthorizedException(AuthErrors.INVALID_VERIFICATION_CODE);
-    }
-
     const passwordHash = await this.hashPassword(dto.newPassword);
-    await this.usersRepository.update({ id: result.user.id }, { passwordHash });
+    await this.usersRepository.update({ id: user.id }, { passwordHash });
 
     return { message: 'Password reset successfully' };
   }
 
   async resendVerificationCode(email: string): Promise<{ message: string }> {
-    const user = await this.usersRepository.findOne({ where: { email } });
+    const user = await this.usersRepository.findOne({
+      where: { email: email.toLowerCase() },
+    });
     if (!user) {
       throw new NotFoundException(AuthErrors.USER_NOT_FOUND);
     }
@@ -212,32 +205,8 @@ export class AuthService {
       throw new BadRequestException(AuthErrors.EMAIL_ALREADY_VERIFIED);
     }
 
-    const verificationCode =
-      await this.verificationCodeService.createVerificationCode(
-        user.id,
-        VerificationTypeEnum.EMAIL_VERIFICATION,
-      );
-
-    try {
-      await this.verificationCodeService.sendVerificationEmail(
-        user,
-        verificationCode.code,
-      );
-    } catch (error) {
-      this.logger.error('Failed to send verification email:', error);
-      throw error;
-    }
-
+    await this.sendEmailVerificationToUser(user);
     return { message: 'Verification code sent successfully' };
-  }
-
-  // Backwards-compatible wrappers for older tests
-  async verifyEmail(token: string): Promise<{ message: string }> {
-    return this.verifyEmailWithCode({ code: token } as any);
-  }
-
-  async resendVerification(email: string): Promise<{ message: string }> {
-    return this.resendVerificationCode(email);
   }
 
   async getVerificationStatus(
@@ -260,32 +229,22 @@ export class AuthService {
     available: boolean;
     message: string;
   }> {
-    const existingUser = await this.usersRepository.findOne({
-      where: { username },
-    });
-
-    return {
-      available: !existingUser,
-      message: existingUser
-        ? 'Username is already taken'
-        : 'Username is available',
-    };
+    return this.checkAvailability(
+      { username },
+      'Username is already taken',
+      'Username is available',
+    );
   }
 
   async checkEmailAvailability(email: string): Promise<{
     available: boolean;
     message: string;
   }> {
-    const existingUser = await this.usersRepository.findOne({
-      where: { email: email.toLowerCase() },
-    });
-
-    return {
-      available: !existingUser,
-      message: existingUser
-        ? 'Email is already registered'
-        : 'Email is available',
-    };
+    return this.checkAvailability(
+      { email: email.toLowerCase() },
+      'Email is already registered',
+      'Email is available',
+    );
   }
 
   private async generateTokens(
@@ -302,10 +261,7 @@ export class AuthService {
       this.configService.get<string>('JWT_REFRESH_EXPIRES_IN'),
       '7d',
     );
-
-    const refreshSecret =
-      this.configService.get<string>('JWT_REFRESH_SECRET') ||
-      `${this.configService.get<string>('JWT_SECRET') ?? 'dev_secret_change_me'}_refresh`;
+    const refreshSecret = getRefreshJwtSecret(this.configService);
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload),
@@ -326,6 +282,11 @@ export class AuthService {
     expiresIn: string,
   ): Promise<void> {
     const tokenHash = this.hashToken(refreshToken);
+    const ttlSeconds = this.parseExpiresInToSeconds(expiresIn);
+    await this.refreshTokenStore.save(userId, tokenHash, ttlSeconds);
+  }
+
+  private parseExpiresInToSeconds(expiresIn: string): number {
     const spec = expiresIn.trim();
     let expiresMs: number;
     try {
@@ -340,17 +301,50 @@ export class AuthService {
     ) {
       expiresMs = ms('7d');
     }
-    const expiresAt = new Date(Date.now() + expiresMs);
-
-    await this.refreshTokenRepository.save({
-      userId,
-      tokenHash,
-      expiresAt,
-    });
+    return Math.ceil(expiresMs / 1000);
   }
 
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  private async verifyCodeForUser(
+    code: string,
+    type: VerificationTypeEnum,
+  ): Promise<User> {
+    const result = await this.verificationCodeService.verifyCode(code, type);
+
+    if (!result.isValid || !result.user) {
+      throw new UnauthorizedException(AuthErrors.INVALID_VERIFICATION_CODE);
+    }
+
+    return result.user;
+  }
+
+  private async sendEmailVerificationToUser(user: User): Promise<void> {
+    const verificationCode =
+      await this.verificationCodeService.createVerificationCode(
+        user.id,
+        VerificationTypeEnum.EMAIL_VERIFICATION,
+      );
+
+    await this.verificationCodeService.sendVerificationEmail(
+      user,
+      verificationCode.code,
+    );
+  }
+
+  private async checkAvailability(
+    where: FindOptionsWhere<User>,
+    takenMessage: string,
+    availableMessage: string,
+  ): Promise<{ available: boolean; message: string }> {
+    const existingUser = await this.usersRepository.findOne({ where });
+
+    return {
+      available: !existingUser,
+      message: existingUser ? takenMessage : availableMessage,
+    };
   }
 
   private async verifyPassword(
@@ -415,23 +409,6 @@ export class AuthService {
     } catch (error) {
       this.logger.error('Failed to save user:', error);
       throw error;
-    }
-  }
-
-  private async sendVerificationCode(user: User): Promise<void> {
-    try {
-      const verificationCode =
-        await this.verificationCodeService.createVerificationCode(
-          user.id,
-          VerificationTypeEnum.EMAIL_VERIFICATION,
-        );
-
-      await this.verificationCodeService.sendVerificationEmail(
-        user,
-        verificationCode.code,
-      );
-    } catch (error) {
-      this.logger.warn('Failed to send verification email:', error);
     }
   }
 

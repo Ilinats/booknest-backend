@@ -1,6 +1,15 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: booknest-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
   postgres:
     image: postgres:16-alpine
     container_name: booknest-postgres
@@ -48,8 +57,14 @@ services:
       FIREBASE_SERVICE_ACCOUNT_PATH: ${FIREBASE_SERVICE_ACCOUNT_PATH}
       RUN_SEEDING: ${RUN_SEEDING:-false}
       SEED_USERS_PASSWORD: ${SEED_USERS_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      ANALYTICS_CACHE_TTL: ${ANALYTICS_CACHE_TTL:-5m}
     depends_on:
       - postgres
+      - redis
 
 volumes:
   postgres_data:
+  redis_data:

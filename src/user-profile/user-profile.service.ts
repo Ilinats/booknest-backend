@@ -1,7 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
   Inject,
   forwardRef,
 } from '@nestjs/common';
@@ -21,6 +20,11 @@ import type {
   NotificationSettings,
   PublicProfileResponse,
 } from './types';
+import {
+  canViewProfileByPrivacy,
+  enforceAuthorPublicProfilePrivacy,
+  findUserByUsernameOrId,
+} from './helpers/user-profile-query.helper';
 
 @Injectable()
 export class UserProfileService {
@@ -104,18 +108,10 @@ export class UserProfileService {
       throw new NotFoundException(UserProfileErrorCode.USER_NOT_FOUND);
     }
 
-    if (
-      user.userType === UserType.AUTHOR &&
-      updates.profilePrivacy !== undefined
-    ) {
-      if (updates.profilePrivacy !== PrivacyLevel.PUBLIC) {
-        throw new BadRequestException(
-          'Authors cannot set their profile privacy to private or friends-only. Author profiles must be public.',
-        );
-      }
-
-      updates.profilePrivacy = PrivacyLevel.PUBLIC;
-    }
+    updates.profilePrivacy = enforceAuthorPublicProfilePrivacy(
+      user,
+      updates.profilePrivacy,
+    );
 
     Object.assign(profile, updates);
     return this.userProfileRepository.save(profile);
@@ -144,17 +140,10 @@ export class UserProfileService {
       throw new NotFoundException(UserProfileErrorCode.USER_NOT_FOUND);
     }
 
-    if (user.userType === UserType.AUTHOR) {
-      if (settings.profilePrivacy !== undefined) {
-        if (settings.profilePrivacy !== PrivacyLevel.PUBLIC) {
-          throw new BadRequestException(
-            'Authors cannot set their profile privacy to private or friends-only. Author profiles must be public.',
-          );
-        }
-      }
-
-      settings.profilePrivacy = PrivacyLevel.PUBLIC;
-    }
+    settings.profilePrivacy = enforceAuthorPublicProfilePrivacy(
+      user,
+      settings.profilePrivacy,
+    );
 
     Object.assign(profile, settings);
     return this.userProfileRepository.save(profile);
@@ -174,30 +163,10 @@ export class UserProfileService {
     usernameOrId: string,
     viewerId?: string,
   ): Promise<PublicProfileResponse> {
-    const isUUID =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        usernameOrId,
-      );
-
-    let user: User | null = null;
-
-    if (isUUID) {
-      user = await this.userRepository.findOne({
-        where: { id: usernameOrId },
-      });
-    }
-
-    if (!user) {
-      user = await this.userRepository.findOne({
-        where: { username: usernameOrId },
-      });
-    }
-
-    if (!user && !isUUID) {
-      user = await this.userRepository.findOne({
-        where: { id: usernameOrId },
-      });
-    }
+    const user = await findUserByUsernameOrId(
+      this.userRepository,
+      usernameOrId,
+    );
 
     if (!user) {
       throw new NotFoundException(UserProfileErrorCode.USER_NOT_FOUND);
@@ -210,12 +179,11 @@ export class UserProfileService {
       isFriend = await this.friendsService.areFriends(viewerId, user.id);
     }
 
-    const canViewProfile = this.checkProfileVisibility(
-      profile.profilePrivacy,
+    const canViewProfile = canViewProfileByPrivacy(profile.profilePrivacy, {
       isFriend,
-      viewerId === user.id,
-      user.userType === UserType.AUTHOR,
-    );
+      isOwner: viewerId === user.id,
+      isAuthor: user.userType === UserType.AUTHOR,
+    });
 
     if (!canViewProfile) {
       throw new NotFoundException(UserProfileErrorCode.PROFILE_PRIVATE);
@@ -253,35 +221,6 @@ export class UserProfileService {
       },
       isFriend,
     };
-  }
-
-  private checkProfileVisibility(
-    privacy: PrivacyLevel,
-    isFriend: boolean,
-    isOwner: boolean,
-    isAuthor: boolean = false,
-  ): boolean {
-    if (isOwner) {
-      return true;
-    }
-
-    if (isAuthor) {
-      return true;
-    }
-
-    if (privacy === PrivacyLevel.PUBLIC) {
-      return true;
-    }
-
-    if (privacy === PrivacyLevel.FRIENDS && isFriend) {
-      return true;
-    }
-
-    if (privacy === PrivacyLevel.PRIVATE) {
-      return false;
-    }
-
-    return false;
   }
 
   async canViewProfile(
@@ -372,30 +311,10 @@ export class UserProfileService {
     days: number = 7,
     limit: number = 50,
   ) {
-    const isUUID =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        usernameOrId,
-      );
-
-    let user: User | null = null;
-
-    if (isUUID) {
-      user = await this.userRepository.findOne({
-        where: { id: usernameOrId },
-      });
-    }
-
-    if (!user) {
-      user = await this.userRepository.findOne({
-        where: { username: usernameOrId },
-      });
-    }
-
-    if (!user && !isUUID) {
-      user = await this.userRepository.findOne({
-        where: { id: usernameOrId },
-      });
-    }
+    const user = await findUserByUsernameOrId(
+      this.userRepository,
+      usernameOrId,
+    );
 
     if (!user) {
       throw new NotFoundException(UserProfileErrorCode.USER_NOT_FOUND);

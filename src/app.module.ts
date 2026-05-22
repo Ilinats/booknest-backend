@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AppConfigModule } from './config/app-config.module';
+import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
 import { FriendsModule } from './friends/friends.module';
 import { AuthorFollowModule } from './author-follow/author-follow.module';
@@ -35,6 +36,7 @@ import { ErrorResponseFilter } from './common/error-response.filter';
       },
     ]),
     AppConfigModule,
+    RedisModule,
     MailModule,
     AuthModule,
     UsersModule,
@@ -60,6 +62,10 @@ import { ErrorResponseFilter } from './common/error-response.filter';
     {
       provide: APP_FILTER,
       useClass: ErrorResponseFilter,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
   ],
 })

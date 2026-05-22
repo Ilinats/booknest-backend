@@ -20,7 +20,7 @@ import { ConfigService } from '@nestjs/config';
 import { UserAddressService } from '../user-address/user-address.service';
 import { VerificationCodeService } from './services/verification-code.service';
 import { User } from '../users/entity/user.entity';
-import { RefreshToken } from './entity/refresh-token.entity';
+import { RefreshTokenStoreService } from './services/refresh-token-store.service';
 import {
   RequestPasswordResetDto,
   ResetPasswordDto,
@@ -54,7 +54,7 @@ function createMockRepo(): MockRepo {
 describe('AuthService', () => {
   let service: AuthService;
   let usersRepository: MockRepo<User>;
-  let refreshTokenRepository: MockRepo<RefreshToken>;
+  let refreshTokenStore: jest.Mocked<RefreshTokenStoreService>;
   let jwtService: jest.Mocked<JwtService>;
   let configService: jest.Mocked<ConfigService>;
   let userAddressService: jest.Mocked<UserAddressService>;
@@ -101,15 +101,20 @@ describe('AuthService', () => {
           useValue: createMockRepo(),
         },
         {
-          provide: getRepositoryToken(RefreshToken),
-          useValue: createMockRepo(),
+          provide: RefreshTokenStoreService,
+          useValue: {
+            save: jest.fn().mockResolvedValue(undefined),
+            getUserId: jest.fn(),
+            revoke: jest.fn().mockResolvedValue(undefined),
+            revokeAllForUser: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
     usersRepository = module.get(getRepositoryToken(User));
-    refreshTokenRepository = module.get(getRepositoryToken(RefreshToken));
+    refreshTokenStore = module.get(RefreshTokenStoreService);
     jwtService = module.get(JwtService);
     configService = module.get(ConfigService);
     userAddressService = module.get(UserAddressService);
@@ -218,13 +223,20 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('deletes refresh token by hash and returns message', async () => {
-      refreshTokenRepository.delete.mockResolvedValue({} as any);
-
+    it('revokes refresh token by hash and returns message', async () => {
       const result = await service.logout('token');
 
-      expect(refreshTokenRepository.delete).toHaveBeenCalled();
+      expect(refreshTokenStore.revoke).toHaveBeenCalled();
       expect(result.message).toBe('Logged out');
+    });
+  });
+
+  describe('logoutAll', () => {
+    it('revokes all refresh tokens for the user', async () => {
+      const result = await service.logoutAll('user-1');
+
+      expect(refreshTokenStore.revokeAllForUser).toHaveBeenCalledWith('user-1');
+      expect(result.message).toBe('Logged out from all devices');
     });
   });
 
@@ -262,7 +274,6 @@ describe('AuthService', () => {
         code: '123456',
       } as any);
       jwtService.signAsync.mockResolvedValue('jwt-token');
-      refreshTokenRepository.save.mockResolvedValue({});
 
       const result = await service.register(dto);
 
@@ -297,7 +308,6 @@ describe('AuthService', () => {
       usersRepository.save.mockResolvedValue(savedUser);
       verificationCodeService.createVerificationCode.mockResolvedValue({ code: '123' } as any);
       jwtService.signAsync.mockResolvedValue('token');
-      refreshTokenRepository.save.mockResolvedValue({});
 
       await service.register(withAddress);
 
@@ -324,7 +334,6 @@ describe('AuthService', () => {
       verificationCodeService.createVerificationCode.mockResolvedValue({ code: '123' } as any);
       verificationCodeService.sendVerificationEmail.mockRejectedValue(new Error('SMTP down'));
       jwtService.signAsync.mockResolvedValue('token');
-      refreshTokenRepository.save.mockResolvedValue({});
 
       const result = await service.register(dto);
 
@@ -363,7 +372,6 @@ describe('AuthService', () => {
         getOne: jest.fn().mockResolvedValue(user),
       });
       jwtService.signAsync.mockResolvedValue('jwt-token');
-      refreshTokenRepository.save.mockResolvedValue({});
 
       const result = await service.login(dto);
 
@@ -388,29 +396,26 @@ describe('AuthService', () => {
       );
     });
 
-    it('throws UnauthorizedException when token not in DB or expired', async () => {
+    it('throws UnauthorizedException when token not in Redis', async () => {
       jwtService.verifyAsync.mockResolvedValue({
         sub: 'u1',
         email: 'u@ex.com',
         userType: UserType.READER,
       });
-      refreshTokenRepository.findOne.mockResolvedValue(null);
+      refreshTokenStore.getUserId.mockResolvedValue(null);
 
       await expect(service.refresh(dto)).rejects.toThrow(
         AuthErrors.INVALID_REFRESH_TOKEN,
       );
     });
 
-    it('throws UnauthorizedException when stored token is expired', async () => {
+    it('throws UnauthorizedException when stored user id does not match JWT', async () => {
       jwtService.verifyAsync.mockResolvedValue({
         sub: 'u1',
         email: 'u@ex.com',
         userType: UserType.READER,
       });
-      refreshTokenRepository.findOne.mockResolvedValue({
-        id: 'rt1',
-        expiresAt: new Date(Date.now() - 1000),
-      });
+      refreshTokenStore.getUserId.mockResolvedValue('other-user');
 
       await expect(service.refresh(dto)).rejects.toThrow(
         AuthErrors.INVALID_REFRESH_TOKEN,
@@ -423,10 +428,7 @@ describe('AuthService', () => {
         email: 'u@ex.com',
         userType: UserType.READER,
       });
-      refreshTokenRepository.findOne.mockResolvedValue({
-        id: 'rt1',
-        expiresAt: new Date(Date.now() + 86400000),
-      });
+      refreshTokenStore.getUserId.mockResolvedValue('missing-user');
       usersRepository.findOne.mockResolvedValue(null);
 
       await expect(service.refresh(dto)).rejects.toThrow(NotFoundException);
@@ -445,17 +447,14 @@ describe('AuthService', () => {
         email: user.email,
         userType: user.userType,
       });
-      refreshTokenRepository.findOne.mockResolvedValue({
-        id: 'rt1',
-        expiresAt: new Date(Date.now() + 86400000),
-      });
-      refreshTokenRepository.delete.mockResolvedValue({});
+      refreshTokenStore.getUserId.mockResolvedValue(user.id);
       usersRepository.findOne.mockResolvedValue(user);
       jwtService.signAsync.mockResolvedValue('new-token');
 
       const result = await service.refresh(dto);
 
-      expect(refreshTokenRepository.delete).toHaveBeenCalledWith({ id: 'rt1' });
+      expect(refreshTokenStore.revoke).toHaveBeenCalled();
+      expect(refreshTokenStore.save).toHaveBeenCalled();
       expect(result.accessToken).toBe('new-token');
       expect(result.refreshToken).toBe('new-token');
     });
@@ -528,34 +527,6 @@ describe('AuthService', () => {
       await expect(
         service.resendVerificationCode('u@ex.com'),
       ).rejects.toThrow('SMTP failed');
-    });
-  });
-
-  describe('verifyEmail (wrapper)', () => {
-    it('calls verifyEmailWithCode with code', async () => {
-      verificationCodeService.verifyCode.mockResolvedValue({
-        isValid: true,
-        user: { id: 'u1', email: 'u@ex.com', username: 'u' } as User,
-      });
-      usersRepository.update.mockResolvedValue({});
-
-      const result = await service.verifyEmail('CODE123');
-
-      expect(result.message).toBe('Email verified successfully');
-    });
-  });
-
-  describe('resendVerification (wrapper)', () => {
-    it('delegates to resendVerificationCode', async () => {
-      const user = { id: 'u1', email: 'u@ex.com', emailVerified: false } as User;
-      usersRepository.findOne.mockResolvedValue(user);
-      verificationCodeService.createVerificationCode.mockResolvedValue({
-        code: '123',
-      } as any);
-
-      const result = await service.resendVerification('u@ex.com');
-
-      expect(result.message).toBe('Verification code sent successfully');
     });
   });
 

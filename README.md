@@ -1,98 +1,257 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# BookNest Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+REST API for **BookNest** — a platform where authors distribute review copies to readers and collect structured feedback. Built with [NestJS](https://nestjs.com), PostgreSQL, and TypeORM.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Readers apply for books, track reading progress, and submit reviews. Authors manage listings, applications, copy distribution, and analytics.
 
-## Description
+## Tech stack
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| Layer | Technology |
+|--------|------------|
+| Runtime | Node.js 22 |
+| Framework | NestJS 11 |
+| Database | PostgreSQL 16 |
+| Cache / sessions | Redis 7 (refresh token store) |
+| ORM | TypeORM (migrations only — `synchronize: false`) |
+| Auth | JWT access + refresh tokens (Redis), Argon2 passwords |
+| Files | AWS S3 (uploads & downloads) |
+| Email | Nodemailer (SMTP / Gmail) |
+| Push | Firebase Admin (optional) |
+| API docs | Swagger at `/api/docs` |
+| Scheduling | `@nestjs/schedule` (book lifecycle cron) |
 
-## Project setup
+## Features (by module)
 
-```bash
-$ npm install
-```
+- **Auth** — register, login, refresh, logout / logout-all, email verification, password reset
+- **Users / profiles / addresses** — reader & author profiles, shipping addresses
+- **Books & series** — CRUD, browse filters, digital/physical distribution, file upload
+- **Applications** — apply, approve/reject, bulk actions, first-come auto-approve, manual lottery draw
+- **Reviews** — post-review workflow tied to approved applications
+- **Friends** — requests, accept/decline, friend list & search
+- **Author follow** — follow authors, feed-style discovery helpers
+- **Files** — S3 presigned URLs; PDF/EPUB downloads with per-reader fingerprint watermark
+- **Notifications** — in-app + Firebase push (when configured)
+- **Reports** — user/content reporting
+- **Analytics** — author book stats & dashboards (read-only; does not silently repair copy counts)
 
-## Compile and run the project
+## Prerequisites
 
-```bash
-# development
-$ npm run start
+- Node.js **22** and npm **11**
+- PostgreSQL **16** (local or Docker)
+- Redis **7** (local or Docker — required for refresh tokens)
+- AWS S3 bucket (for book files & images) — optional for limited local dev
+- SMTP or Gmail app password (for verification emails) — optional in dev
 
-# watch mode
-$ npm run start:dev
+## Quick start
 
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### 1. Install dependencies
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm install
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### 2. Environment
 
-## Resources
+Create `.env` in the project root (and optionally `.env.local`). Minimum for local API + Postgres:
 
-Check out a few resources that may come in handy when working with NestJS:
+```env
+# Server
+PORT=3000
+NODE_ENV=development
+APP_URL=http://localhost:3000
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+# PostgreSQL
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5433
+POSTGRES_USER=booknest
+POSTGRES_PASSWORD=booknest_password
+POSTGRES_DB=booknest
+DATABASE_LOGGING=false
 
-## Support
+# JWT (required)
+JWT_SECRET=change-me-in-production
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_SECRET=change-me-refresh-in-production
+JWT_REFRESH_EXPIRES_IN=7d
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+# Redis (required — refresh tokens)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
 
-## Stay in touch
+# Analytics cache (Redis — book stats, analytics, author dashboards)
+ANALYTICS_CACHE_TTL=5m
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+# AWS S3 (required for file upload/download)
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_S3_BUCKET_NAME=booknest-files
+AWS_S3_BASE_URL=
+
+# Email (optional — verification flows need this in production)
+GMAIL_USER=
+GMAIL_APP_PASSWORD=
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+
+# Seeding (dev)
+RUN_SEEDING=false
+SEED_USERS_PASSWORD=dev-password-change-me
+
+# Firebase push (optional)
+FIREBASE_SERVICE_ACCOUNT_PATH=
+# or FIREBASE_SERVICE_ACCOUNT_JSON=
+
+# Book file fingerprinting (falls back to JWT_SECRET if unset)
+BOOK_PDF_FINGERPRINT_SECRET=
+BOOK_EPUB_FINGERPRINT_SECRET=
+```
+
+### 3. Database
+
+Start Postgres (example with Docker — only the DB service):
+
+```bash
+docker compose up postgres -d
+```
+
+Run migrations:
+
+```bash
+npm run migration:run
+```
+
+Optional seed data (also runs automatically when `NODE_ENV=development` on startup):
+
+```bash
+npm run seed
+# or
+RUN_SEEDING=true npm run start:dev
+```
+
+### 4. Run the API
+
+```bash
+npm run start:dev
+```
+
+- API base: `http://localhost:3000/api`
+- Swagger UI: `http://localhost:3000/api/docs`
+
+### Full stack with Docker
+
+Build and run API + Postgres + Redis:
+
+```bash
+docker compose up --build
+```
+
+Ensure `.env` supplies `JWT_SECRET`, `JWT_REFRESH_SECRET`, and AWS credentials for the `app` service (see `docker-compose.yml`).
+
+The `Dockerfile` uses a **multi-stage build**: dev dependencies and TypeScript sources stay in the build stage; the runtime image only contains compiled `dist/` and production `node_modules`. Rebuild after dependency changes with `docker compose build --no-cache app`.
+
+**Image size:** a single-stage image that runs `npm install` (all deps) and keeps source in the final layer is often ~1.3GB+. The multi-stage image is typically **~800MB** — still large because of heavy runtime deps (`firebase-admin`, `googleapis`, AWS SDK, `pdf-lib`). Removing unused packages (e.g. `googleapis` if you are not calling Google APIs) can shave off another ~180MB.
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run start:dev` | Dev server with watch |
+| `npm run build` | Compile to `dist/` |
+| `npm run start:prod` | Run compiled app |
+| `npm test` | Unit tests (Jest) |
+| `npm run test:cov` | Coverage report |
+| `npm run test:e2e` | E2E tests |
+| `npm run lint` | ESLint |
+| `npm run migration:run` | Apply pending migrations |
+| `npm run migration:revert` | Revert last migration |
+| `npm run migration:show` | List migration status |
+| `npm run migration:generate -- src/migrations/MyMigration` | Generate from entity diff |
+| `npm run seed` | Run database seeder |
+
+## Application selection methods
+
+Authors choose how readers get copies when creating a book:
+
+| Method | Behavior |
+|--------|----------|
+| `author_selects` | Author approves/rejects each application |
+| `first_come` | Auto-approve while `availableCopies > 0` (atomic reserve in a DB transaction) |
+| `lottery` | All applications stay pending until deadline; author runs draw via `POST /api/applications/books/:bookId/run-lottery` (once per book, tracked by `lottery_run_at`) |
+
+Copy reservation uses `tryReserveCopies` (`UPDATE … WHERE available_copies >= :count`) inside transactions for create, approve, bulk approve, and lottery.
+
+## Book downloads & leak tracing
+
+- **PDF / EPUB**: server fetches from S3, embeds a signed per-reader fingerprint, returns the file body (requires approved application).
+- **Other formats**: JSON response with a presigned S3 URL.
+- Authors can decode fingerprints from uploaded files via the leak-analysis endpoint (see Swagger).
+
+> Large files are loaded into memory for watermarking. For high concurrency, consider pre-generated per-reader copies or download limits (not implemented yet).
+
+## Scheduled jobs
+
+`BooksSchedulerService` runs daily at midnight (server time):
+
+- Non-lottery books: `active` → `in_progress` when application deadline passes
+- Lottery books: same transition only after `lottery_run_at` is set
+- `in_progress` → `completed` when review deadline passes
+
+Lottery winner selection is **never** run by the cron — only by the author endpoint.
+
+## Project structure
+
+```
+src/
+├── applications/     # Reader applications, bulk actions, lottery
+├── auth/             # JWT auth, verification, password reset
+├── books/            # Books, analytics, files, scheduler
+├── friends/
+├── reviews/
+├── users/            # Core user entity & settings
+├── user-profile/
+├── user-address/
+├── files/            # S3 integration
+├── notifications/
+├── migrations/       # TypeORM migrations
+├── seeds/            # Dev seed data
+├── config/           # TypeORM & env wiring
+└── main.ts           # Bootstrap, Swagger, global prefix `api`
+```
+
+## API conventions
+
+- Global prefix: `/api`
+- Bearer JWT on protected routes (`Authorization: Bearer <accessToken>`)
+- Validation: `class-validator` with whitelist; unknown fields rejected
+- Rate limiting: 100 requests / minute per IP (global `ThrottlerGuard`); stricter limits on auth routes
+- Errors: consistent JSON via `ErrorResponseFilter`
+
+## Testing
+
+```bash
+npm test
+npm run test:cov
+```
+
+Tests live next to source files as `*.spec.ts`. Coverage excludes controllers, modules, migrations, and seeds by default (see `package.json` → `jest`).
+
+## Migrations
+
+Always use migrations in production — **do not** enable `synchronize`.
+
+```bash
+npm run migration:run
+```
+
+New migration file (empty scaffold):
+
+```bash
+npm run migration:create -- src/migrations/DescriptiveName
+```
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Private / UNLICENSED — see `package.json`.

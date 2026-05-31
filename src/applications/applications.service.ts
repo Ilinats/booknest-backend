@@ -791,7 +791,6 @@ export class ApplicationsService {
     const application = await manager.findOne(Application, {
       where: { id: applicationId },
       lock: { mode: 'pessimistic_write' },
-      relations: ['book'],
     });
 
     if (!application) {

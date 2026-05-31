@@ -32,7 +32,7 @@ import { ErrorResponseFilter } from './common/error-response.filter';
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 100,
+        limit: 10000,
       },
     ]),
     AppConfigModule,

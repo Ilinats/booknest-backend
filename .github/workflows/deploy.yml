@@ -30,14 +30,13 @@ jobs:
           ssh -o StrictHostKeyChecking=no \
               -o ProxyCommand="cloudflared access ssh --hostname ${SSH_HOST}" \
               -i /tmp/ssh_key \
-              ${SSH_USER}@${SSH_HOST} << 'ENDSSH'
-          set -euo pipefail
-          export NVM_DIR="$HOME/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-          cd "$DEPLOY_PATH"
-          git fetch origin
-          git checkout master
-          git pull --ff-only origin master
-          chmod +x scripts/deploy.sh
-          ./scripts/deploy.sh
-          ENDSSH
+              ${SSH_USER}@${SSH_HOST} \
+              "set -euo pipefail
+               export NVM_DIR=\"\$HOME/.nvm\"
+               [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+               cd \"${DEPLOY_PATH}\"
+               git fetch origin
+               git checkout master
+               git pull --ff-only origin master
+               chmod +x scripts/deploy.sh
+               ./scripts/deploy.sh"

@@ -13,11 +13,8 @@ if [[ -s "$NVM_DIR/nvm.sh" ]]; then
   . "$NVM_DIR/nvm.sh"
 fi
 
-echo "==> Starting dependencies (redis, postgres)"
-docker compose up -d redis postgres
-
 echo "==> Installing npm dependencies"
-npm ci
+npm i
 
 echo "==> Running migrations"
 npm run migration:run

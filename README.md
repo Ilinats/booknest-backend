@@ -152,8 +152,6 @@ Ensure `.env` supplies `JWT_SECRET`, `JWT_REFRESH_SECRET`, and AWS credentials f
 
 The `Dockerfile` uses a **multi-stage build**: dev dependencies and TypeScript sources stay in the build stage; the runtime image only contains compiled `dist/` and production `node_modules`. Rebuild after dependency changes with `docker compose build --no-cache app`.
 
-**Image size:** a single-stage image that runs `npm install` (all deps) and keeps source in the final layer is often ~1.3GB+. The multi-stage image is typically **~800MB** — still large because of heavy runtime deps (`firebase-admin`, `googleapis`, AWS SDK, `pdf-lib`). Removing unused packages (e.g. `googleapis` if you are not calling Google APIs) can shave off another ~180MB.
-
 ## Scripts
 
 | Command | Description |

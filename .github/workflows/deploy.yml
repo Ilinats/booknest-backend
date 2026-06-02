@@ -12,21 +12,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Mac Mini via SSH
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-            cd "${{ secrets.DEPLOY_PATH }}"
-            git fetch origin
-            git checkout master
-            git pull --ff-only origin master
-            chmod +x scripts/deploy.sh
-            ./scripts/deploy.sh
+      - name: Install cloudflared
+        run: |
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/
+
+      - name: Deploy via SSH over Cloudflare Tunnel
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > /tmp/ssh_key
+          chmod 600 /tmp/ssh_key
+          ssh -o StrictHostKeyChecking=no \
+              -o ProxyCommand="cloudflared access ssh --hostname ${SSH_HOST}" \
+              -i /tmp/ssh_key \
+              ${SSH_USER}@${SSH_HOST} << 'ENDSSH'
+          set -euo pipefail
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          cd "$DEPLOY_PATH"
+          git fetch origin
+          git checkout master
+          git pull --ff-only origin master
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh
+          ENDSSH

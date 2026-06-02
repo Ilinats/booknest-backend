@@ -84,10 +84,7 @@ export class FriendsController {
   @ApiResponse({ status: 200, description: 'List of user profiles' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async getFriends(
-    @Request() req: any,
-    @Query() query: GetFriendsQueryDto,
-  ) {
+  async getFriends(@Request() req: any, @Query() query: GetFriendsQueryDto) {
     const userId = getUserId(req);
     const status = query.status ?? FriendStatus.ACCEPTED;
 
@@ -119,7 +116,10 @@ export class FriendsController {
     type: Number,
     description: 'Maximum number of results (default: 20)',
   })
-  @ApiResponse({ status: 200, description: 'List of users with friendship status' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of users with friendship status',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async searchUsersForFriends(
     @Request() req: any,
